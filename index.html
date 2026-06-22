@@ -3,8 +3,70 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>帳務轉換工具 v2</title>
+<title>帳務轉換工具</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBJ5LsQmi1hFusCS-7OJ9Z0TBoz31ebq14",
+    authDomain: "accounting-tool-a9ac6.firebaseapp.com",
+    projectId: "accounting-tool-a9ac6",
+    storageBucket: "accounting-tool-a9ac6.firebasestorage.app",
+    messagingSenderId: "225722892064",
+    appId: "1:225722892064:web:3c71be9c0635dcc1272145",
+    measurementId: "G-M56DF57TB0"
+  };
+
+  const ALLOWED_DOMAIN = "openrealty.com.tw";
+
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ hd: ALLOWED_DOMAIN });
+
+  // 監聽登入狀態
+  onAuthStateChanged(auth, user => {
+    if(user){
+      const domain = user.email.split("@")[1];
+      if(domain !== ALLOWED_DOMAIN){
+        // 非公司帳號，強制登出
+        signOut(auth);
+        showLoginPage("此工具僅限 @" + ALLOWED_DOMAIN + " 帳號使用");
+        return;
+      }
+      // 公司帳號，顯示工具
+      document.getElementById("login-page").style.display = "none";
+      document.getElementById("app-page").style.display = "block";
+      document.getElementById("user-name").textContent = user.displayName || user.email;
+      document.getElementById("user-email").textContent = user.email;
+    } else {
+      showLoginPage("");
+    }
+  });
+
+  function showLoginPage(errMsg){
+    document.getElementById("login-page").style.display = "flex";
+    document.getElementById("app-page").style.display = "none";
+    document.getElementById("login-error").textContent = errMsg;
+  }
+
+  // 登入按鈕
+  window.handleLogin = async function(){
+    try{
+      await signInWithPopup(auth, provider);
+    } catch(e){
+      document.getElementById("login-error").textContent = "登入失敗，請再試一次";
+    }
+  };
+
+  // 登出按鈕
+  window.handleLogout = async function(){
+    await signOut(auth);
+  };
+</script>
 <style>
 :root {
   --bg: #F4F5F7;
@@ -114,6 +176,21 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 .hint{font-size:12px;color:var(--ink-soft);padding:8px 18px 12px;}
 [hidden]{display:none!important;}
 
+  /* ── 登入頁面 ── */
+  #login-page{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;background:var(--bg);}
+  .login-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:48px 40px;text-align:center;max-width:380px;width:90%;box-shadow:0 4px 24px rgba(0,0,0,.07);}
+  .login-card .logo{font-size:36px;margin-bottom:16px;}
+  .login-card h1{font-size:20px;font-weight:700;margin-bottom:6px;}
+  .login-card p{font-size:13.5px;color:var(--ink-soft);margin-bottom:28px;line-height:1.6;}
+  .btn-google{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:12px 20px;border-radius:8px;border:1.5px solid var(--border);background:var(--surface);font-size:14px;font-weight:600;cursor:pointer;transition:border-color .14s,background .14s;}
+  .btn-google:hover{border-color:var(--accent);background:var(--accent-soft);}
+  #login-error{margin-top:14px;font-size:13px;color:var(--danger);min-height:18px;}
+  .user-bar{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-soft);}
+  .user-bar strong{color:var(--ink);}
+  .btn-logout{font-size:12px;padding:4px 10px;border-radius:5px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--ink-soft);}
+  .btn-logout:hover{border-color:var(--danger);color:var(--danger);}
+  #app-page{display:none;}
+
 /* ── section label ── */
 .sec-label{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);padding:10px 18px 6px;}
 
@@ -129,10 +206,35 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 </style>
 </head>
 <body>
+
+<!-- 登入頁面 -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="logo">🏠</div>
+    <h1>帳務轉換工具</h1>
+    <p>此工具僅限全居資產管理內部使用<br>請使用公司 Google 帳號登入</p>
+    <button class="btn-google" onclick="handleLogin()">
+      <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      使用 Google 帳號登入
+    </button>
+    <div id="login-error"></div>
+  </div>
+</div>
+
+<!-- 主工具頁面 -->
+<div id="app-page">
 <div class="app">
 
 <header class="topbar">
   <h1><span class="dot"></span>帳務轉換工具</h1>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <div class="user-bar">
+      已登入：<strong id="user-name"></strong>
+      <span id="user-email" style="color:var(--ink-faint);font-size:11.5px;"></span>
+    </div>
+    <button class="btn-logout" onclick="handleLogout()">登出</button>
+  </div>
+</header>
   <span class="badge">房源 282 筆 · 房管處帳戶 1 組 · 業務處帳戶 1 組</span>
 </header>
 
@@ -1505,5 +1607,7 @@ document.getElementById("biz-btn-cashflow").addEventListener("click",()=>{
 // 輔助：讓 dateKey 能被 toRoc 吃（整數 YYYYMMDD）
 const _origToRoc=toRoc;
 </script>
+</div><!-- /app -->
+</div><!-- /app-page -->
 </body>
 </html>

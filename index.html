@@ -25,19 +25,11 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ hd: ALLOWED_DOMAIN });
 
   // 監聽登入狀態
   onAuthStateChanged(auth, user => {
     if(user){
-      const domain = user.email.split("@")[1];
-      if(domain !== ALLOWED_DOMAIN){
-        // 非公司帳號，強制登出
-        signOut(auth);
-        showLoginPage("此工具僅限 @" + ALLOWED_DOMAIN + " 帳號使用");
-        return;
-      }
-      // 公司帳號，顯示工具
+      // 測試模式：暫時允許所有 Google 帳號，確認功能後再加網域限制
       document.getElementById("login-page").style.display = "none";
       document.getElementById("app-page").style.display = "block";
       document.getElementById("user-name").textContent = user.displayName || user.email;
@@ -356,12 +348,34 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         </table>
       </div>
 
-      <div class="actbar">
-        <div class="bal" id="fang-bal">—</div>
-        <div class="btns">
-          <button class="btn secondary" id="fang-btn-reset">重新上傳</button>
-          <button class="btn primary" id="fang-btn-voucher" disabled>下載傳票匯入檔</button>
-          <button class="btn primary" id="fang-btn-cashflow" disabled>下載金流表</button>
+      <div class="actbar" style="flex-direction:column;align-items:stretch;gap:14px;">
+        <!-- 正本金流表上傳區（在結果頁面） -->
+        <div style="padding:12px 0;border-bottom:1px dashed var(--border);">
+          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">
+            📌 出納確認金流表補齊後，上傳正本金流表即可產出傳票匯入檔
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div class="dropzone" id="fang-dz-cashflow" style="padding:12px 20px;flex:0 0 auto;min-width:220px;">
+              <div class="dz-icon">📊</div>
+              <div class="dz-label">上傳正本金流表</div>
+              <div class="dz-hint">金流表_房管處_YYYY-MM-DD.xlsx</div>
+            </div>
+            <input type="file" id="fang-file-cashflow" accept=".xlsx" hidden>
+            <div id="fang-cashflow-status" style="font-size:13px;color:var(--ink-soft);flex:1;">
+              尚未上傳正本金流表，上傳後可產出傳票匯入檔
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <div class="bal" id="fang-bal">—</div>
+            <div id="fang-reconcile-status" style="font-size:12.5px;"></div>
+          </div>
+          <div class="btns">
+            <button class="btn secondary" id="fang-btn-reset">重新上傳</button>
+            <button class="btn primary" id="fang-btn-cashflow" disabled>下載金流表</button>
+            <button class="btn primary" id="fang-btn-voucher" disabled>下載傳票匯入檔</button>
+          </div>
         </div>
       </div>
     </div>
@@ -579,10 +593,18 @@ HOUSING_MATCH_LIST.sort((a,b)=>b.matchKey.length-a.matchKey.length);
 const HOUSING_SORTED = HOUSING_MATCH_LIST; // 保留相容性
 
 function matchHousing(name){
-  const n=String(name);
+  const n=String(name).trim();
+  // 先精確比對（含別名）
   for(const h of HOUSING_MATCH_LIST){
     if(n.startsWith(h.matchKey))
       return{code:h.code, matchedName:h.matchKey, remainder:n.slice(h.matchKey.length)};
+  }
+  // 再嘗試「金流表沒有居所，資料庫有居所」的情況
+  // 例如金流表「安居60」→ 資料庫「安居60居所」
+  for(const h of HOUSING_MATCH_LIST){
+    const keyWithout=h.matchKey.replace(/居所.*$/,"").trim();
+    if(keyWithout.length>=3 && n.startsWith(keyWithout))
+      return{code:h.code, matchedName:keyWithout, remainder:n.slice(keyWithout.length)};
   }
   return null;
 }
@@ -933,7 +955,7 @@ function buildFangReceiptLines(rec){
 /* ══════════════════════════════════════
    狀態
 ══════════════════════════════════════ */
-let fangState={bank:null,third:null,receipt:null,
+let fangState={bank:null,third:null,receipt:null,cashflowFile:null,
   matched:[],unmatched:[],
   bankonlyMatched:[],bankonlyUnmatched:[]};
 let bizState={bank:null,ragic:null,matched:[],unmatched:[],bankOnly:[]};
@@ -982,8 +1004,145 @@ function showErr(id,msg){
 function clearErr(id){document.getElementById(id).style.display="none";}
 
 /* ══════════════════════════════════════
-   房管處 上傳
+   解析正本金流表
 ══════════════════════════════════════ */
+function parseCashflowXlsx(data){
+  const wb=XLSX.read(data,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+
+  const rows=[];
+  let currentDate="";
+
+  for(const r of aoa){
+    // 更新日期（第0欄有日期文字）
+    const dateCell=r[0]?String(r[0]).replace(/\s*★\s*/g,"").trim():"";
+    if(dateCell && /\d+月\d+日/.test(dateCell)){
+      currentDate=dateCell;
+    }
+
+    // 說明欄（第1欄），清除換行符和多餘空白
+    const rawDesc=r[1]?String(r[1]):"";
+    const desc=rawDesc.replace(/[\r\n]+/g," ").replace(/\s+/g," ").trim();
+
+    // 收入欄（第3欄）
+    const income=r[3]?Number(r[3]):null;
+
+    // 跳過：沒有說明、沒有收入、標題列、或是未核對的
+    if(!desc||!income||isNaN(income)||income<=0) continue;
+    if(desc==="說明") continue;
+    if(desc.startsWith("【未核對")) continue;
+
+    rows.push({
+      date:currentDate,
+      desc,
+      amount:income,
+      isUnmatched:false,
+    });
+  }
+  return rows;
+}
+
+/* ══════════════════════════════════════
+   從金流表摘要判斷會計科目
+══════════════════════════════════════ */
+function buildVoucherFromCashflowDesc(desc, amount, date, rocYear){
+  // 清理說明文字
+  const d=desc.replace(/[\r\n]+/g," ").replace(/\s+/g," ").trim();
+
+  // 抓房源名稱（第一個 - 之前）
+  const houseName=d.split("-")[0].trim();
+  const houseMatch=matchHousing(houseName);
+  const code=houseMatch?houseMatch.code:houseName;
+  const lines=[];
+
+  // 從說明文字抓金額的輔助函式
+  function grabAmt(pattern){
+    const m=d.match(pattern);
+    return m?parseInt(m[1].replace(/,/g,"")):0;
+  }
+
+  // ── 判斷類型 ──
+  const hasDeposit=d.includes("押金");
+  const hasRent=d.includes("租金");
+  const hasService=d.includes("服務費");
+  const hasMgmt=d.includes("代管費")||d.includes("代墊款");
+
+  if(hasDeposit && (hasRent || hasService)){
+    // F. 押金＋租金（混合）
+    // 押金：抓「總計$XXXX」或「押金$XXXX」
+    const depTotal=grabAmt(/總計\$?([\d,]+)/)||grabAmt(/押金\$?([\d,]+)/);
+    const rent=grabAmt(/租金\$?([\d,]+)/);
+    const service=grabAmt(/服務費\$?([\d,]+)/);
+
+    // 借方：合計一筆（所有收入加總）
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:d});
+    // 貸方
+    if(depTotal>0) lines.push({acctCode:"2205-03",custCode:code,dc:2,amount:depTotal,summary:`${houseName}-押金`});
+    if(rent>0)     lines.push({acctCode:"2205-02",custCode:code,dc:2,amount:rent,summary:d});
+    if(service>0)  lines.push({acctCode:"2205-01",custCode:code,dc:2,amount:service,summary:d});
+
+    // 驗證借貸平衡，若不平衡加在 2205-02
+    const creditSum=(depTotal||0)+(rent||0)+(service||0);
+    if(creditSum!==amount && creditSum>0){
+      const diff=amount-creditSum;
+      // 補差額到租金
+      const rentIdx=lines.findIndex(l=>l.acctCode==="2205-02");
+      if(rentIdx>=0) lines[rentIdx].amount+=diff;
+      else lines.push({acctCode:"2205-02",custCode:code,dc:2,amount:diff,summary:d});
+    }
+
+  }else if(hasDeposit){
+    // E. 純押金
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:d});
+    lines.push({acctCode:"2205-03",custCode:code,dc:2,amount,summary:d});
+
+  }else if(hasRent){
+    // A. 一般租金
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:d});
+    lines.push({acctCode:"2205-02",custCode:code,dc:2,amount,summary:d});
+
+  }else if(hasMgmt||hasService){
+    // B/C. 代管費 / 服務費
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:d});
+    lines.push({acctCode:"2205-01",custCode:code,dc:2,amount,summary:d});
+
+  }else{
+    // 無法判斷，標記待確認
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:d});
+    lines.push({acctCode:"PENDING",custCode:code,dc:2,amount,summary:d+"（科目待確認）"});
+  }
+
+  return lines;
+}
+
+/* ══════════════════════════════════════
+   正本金流表上傳綁定
+══════════════════════════════════════ */
+bindDropzone("fang-dz-cashflow","fang-file-cashflow",async(file,dz)=>{
+  try{
+    const data=await readFile(file);
+    fangState.cashflowFile=parseCashflowXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name;
+    const unmatchedCount=fangState.cashflowFile.filter(r=>r.isUnmatched).length;
+    const total=fangState.cashflowFile.length;
+    const statusEl=document.getElementById("fang-cashflow-status");
+    if(unmatchedCount>0){
+      statusEl.innerHTML=`<span style="color:var(--warn);">⚠ 金流表共 ${total} 筆，其中 ${unmatchedCount} 筆仍標記【未核對】，建議出納確認後再下載傳票</span>`;
+    } else {
+      statusEl.innerHTML=`<span style="color:var(--ok);font-weight:700;">✓ 金流表共 ${total} 筆，全部有摘要，可下載傳票匯入檔</span>`;
+    }
+    updateFangVoucherBtn();
+  }catch(e){showErr("fang-err","正本金流表讀取失敗："+e.message);}
+});
+
+function updateFangVoucherBtn(){
+  const hasFile=fangState.cashflowFile&&fangState.cashflowFile.length>0;
+  const cfUnmatched=hasFile?fangState.cashflowFile.filter(r=>r.isUnmatched).length:0;
+  // 有金流表且沒有未核對筆才能下載
+  document.getElementById("fang-btn-voucher").disabled=!(hasFile&&cfUnmatched===0);
+}
 bindDropzone("fang-dz-bank","fang-file-bank",async(file,dz)=>{
   try{
     const data=await readFile(file);
@@ -1037,21 +1196,24 @@ document.getElementById("fang-btn-match").addEventListener("click",()=>{
 });
 
 document.getElementById("fang-btn-reset").addEventListener("click",()=>{
-  fangState={bank:null,third:null,receipt:null,
+  fangState={bank:null,third:null,receipt:null,cashflowFile:null,
     matched:[],unmatched:[],bankonlyMatched:[],bankonlyUnmatched:[]};
   document.getElementById("fang-upload").hidden=false;
   document.getElementById("fang-result").hidden=true;
-  ["fang-dz-bank","fang-dz-third","fang-dz-receipt"].forEach(id=>{
+  ["fang-dz-bank","fang-dz-third","fang-dz-receipt","fang-dz-cashflow"].forEach(id=>{
     const dz=document.getElementById(id);
     dz.classList.remove("loaded");
     if(id.includes("bank"))dz.querySelector(".dz-label").textContent="上傳網銀明細";
     else if(id.includes("third"))dz.querySelector(".dz-label").textContent="上傳帳務管理報表";
-    else dz.querySelector(".dz-label").textContent="上傳房管處收款單";
+    else if(id.includes("receipt"))dz.querySelector(".dz-label").textContent="上傳房管處收款單";
+    else dz.querySelector(".dz-label").textContent="上傳正本金流表";
   });
-  ["fang-file-bank","fang-file-third","fang-file-receipt"].forEach(id=>{
+  ["fang-file-bank","fang-file-third","fang-file-receipt","fang-file-cashflow"].forEach(id=>{
     document.getElementById(id).value="";
   });
   document.getElementById("fang-btn-match").disabled=true;
+  document.getElementById("fang-btn-voucher").disabled=true;
+  document.getElementById("fang-cashflow-status").textContent="尚未上傳正本金流表，上傳後可產出傳票匯入檔";
 });
 
 /* ══════════════════════════════════════
@@ -1188,10 +1350,40 @@ function renderFangResult(){
       (debit===credit?`<span class="ok">✓ 平衡</span>`:`<span class="warn">⚠ 不平衡，請檢查</span>`);
   }
 
-  // 傳票：只要有任何一筆比對成功且有房源代號就可以下載（沒代號的筆產出時跳過）
-  const hasVoucherItems=matched.some(item=>item.source.match)||
-    (bankonlyMatched||[]).some(item=>!hasPending);
-  document.getElementById("fang-btn-voucher").disabled=!hasVoucherItems;
+  // ── 比對完成率（以網銀比對結果顯示，供出納參考）──
+  const totalBank=fangState.bank.length;
+  let matchedBankCount=0;
+  matched.forEach(item=>{
+    const banks=Array.isArray(item.bank)?item.bank:[item.bank];
+    matchedBankCount+=banks.length;
+  });
+  (bankonlyMatched||[]).forEach(item=>{
+    const banks=Array.isArray(item.bank)?item.bank:[item.bank];
+    matchedBankCount+=banks.length;
+  });
+  const unmatchedBankCount=totalBank-matchedBankCount;
+  const rateEl=document.getElementById("fang-reconcile-status");
+
+  if(fangState.cashflowFile&&fangState.cashflowFile.length>0){
+    // 有上傳正本金流表：以金流表內容為準
+    const cfUnmatched=fangState.cashflowFile.filter(r=>r.isUnmatched).length;
+    const cfTotal=fangState.cashflowFile.length;
+    if(cfUnmatched===0){
+      rateEl.innerHTML=`<span style="color:var(--ok);font-weight:700;">✓ 正本金流表 ${cfTotal} 筆全部有摘要，可下載傳票匯入檔</span>`;
+    }else{
+      rateEl.innerHTML=`<span style="color:var(--warn);">⚠ 正本金流表還有 <strong>${cfUnmatched}</strong> 筆標記【未核對】，請出納補齊後再下載傳票</span>`;
+    }
+  }else{
+    // 尚未上傳正本金流表：顯示網銀比對結果
+    if(unmatchedBankCount===0&&totalBank>0){
+      rateEl.innerHTML=`<span style="color:var(--ok);font-weight:700;">✓ 全部 ${totalBank} 筆網銀已核對完成，請上傳正本金流表後下載傳票</span>`;
+    }else if(totalBank>0){
+      rateEl.innerHTML=`<span style="color:var(--warn);">⚠ 還有 <strong>${unmatchedBankCount}</strong> 筆未核對（共 ${totalBank} 筆）— 請先下載金流表，出納補齊後上傳正本金流表</span>`;
+    }
+  }
+
+  // 傳票：需要上傳正本金流表，且金流表裡沒有【未核對】筆才能下載
+  updateFangVoucherBtn();
   // 金流表：比對完成後就可以下載
   document.getElementById("fang-btn-cashflow").disabled=false;
 }
@@ -1245,49 +1437,58 @@ function buildThirdPartyLines(item){
 }
 
 document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
+  if(!fangState.cashflowFile||!fangState.cashflowFile.length){
+    alert("請先上傳正本金流表"); return;
+  }
   const rows=[VOUCHER_HEADERS];
 
-  // ── 建立 bank物件 → index 的 map（同金流表邏輯）──
-  const bankIndexMap=new Map();
-  fangState.bank.forEach((b,i)=>bankIndexMap.set(b,i));
+  // ── 合併分兩筆的項目 ──
+  // 規則：說明含「分X筆」或「總計」代表是多筆系列
+  // 合併方式：同房源、連續出現的筆合併成一筆
+  const merged=[];
+  fangState.cashflowFile.forEach(row=>{
+    const houseName=row.desc.split("-")[0].trim();
+    const hasTotal=row.desc.includes("總計");
+    const hasSplit=row.desc.includes("分2筆")||row.desc.includes("分兩筆")||row.desc.includes("分3筆");
 
-  // bankIndex → 傳票分錄陣列
-  const bankVoucherMap=new Map();
+    // 找前面最近的同房源筆，且距離不超過3筆
+    let merged_into=-1;
+    for(let i=merged.length-1;i>=Math.max(0,merged.length-4);i--){
+      const prevHouse=merged[i].desc.split("-")[0].trim();
+      const prevHasTotal=merged[i].desc.includes("總計");
+      const prevHasSplit=merged[i].desc.includes("分2筆")||merged[i].desc.includes("分兩筆");
+      if(prevHouse===houseName && (hasTotal||hasSplit||prevHasTotal||prevHasSplit)){
+        merged_into=i; break;
+      }
+    }
 
-  // 第一輪：帳務報表比對成功
-  fangState.matched.forEach(item=>{
-    const s=item.source;
-    if(!s.match) return;
-    const lines=buildThirdPartyLines(item);
-    const banks=Array.isArray(item.bank)?item.bank:[item.bank];
-    // 一對多時，傳票只建一次（掛在第一筆網銀上）
-    const firstIdx=bankIndexMap.get(banks[0]);
-    if(firstIdx!==undefined) bankVoucherMap.set(firstIdx,{s, lines, type:'third'});
+    if(merged_into>=0){
+      // 合併：金額加總，說明用較完整的那筆（含總計或分筆說明的優先）
+      const prev=merged[merged_into];
+      prev.amount+=row.amount;
+      // 用說明資訊更豐富的那筆
+      if(hasTotal||hasSplit) prev.desc=row.desc;
+    }else{
+      merged.push({...row, houseName});
+    }
   });
 
-  // 第二輪：收款單比對成功
-  (fangState.bankonlyMatched||[]).forEach(item=>{
-    const s=item.source;
-    const custCode=s.houseMatch?s.houseMatch.code:s.houseName;
-    const lines=buildFangReceiptLines(s).map(l=>({...l, acctCode:l.code, custCode}));
-    const banks=Array.isArray(item.bank)?item.bank:[item.bank];
-    const firstIdx=bankIndexMap.get(banks[0]);
-    if(firstIdx!==undefined) bankVoucherMap.set(firstIdx,{s, lines, type:'receipt'});
-  });
+  // ── 產出傳票 ──
+  merged.forEach(row=>{
+    // 從日期字串解析民國年（例如「6月1日」→ 從工具狀態取年份）
+    const rocYear=fangState.matched&&fangState.matched.length>0
+      ?fangState.matched[0].source.rocYear
+      :115;
+    const dateStr=row.date||"";
 
-  // ── 按網銀原始順序輸出傳票 ──
-  fangState.bank.forEach((b,i)=>{
-    if(!bankVoucherMap.has(i)) return; // 未比對到的跳過（不產傳票）
-    const {s, lines, type}=bankVoucherMap.get(i);
-    const rocYear=type==='third'?s.rocYear:toRoc(s.dateKey).year;
-    const rocStr=type==='third'?s.rocStr:s.rocStr;
+    const lines=buildVoucherFromCashflowDesc(row.desc, row.amount, dateStr, rocYear);
     lines.forEach(line=>{
-      const row=new Array(VOUCHER_HEADERS.length).fill(null);
-      row[0]=rocYear; row[1]="DEFAULT"; row[2]=3; row[3]=rocStr;
-      row[9]=line.acctCode; row[10]=line.custCode;
-      row[12]=line.dc; row[13]=line.amount;
-      row[22]=line.summary;
-      rows.push(row);
+      const r=new Array(VOUCHER_HEADERS.length).fill(null);
+      r[0]=rocYear; r[1]="DEFAULT"; r[2]=3; r[3]=dateStr;
+      r[9]=line.acctCode; r[10]=line.custCode;
+      r[12]=line.dc; r[13]=line.amount;
+      r[22]=line.summary;
+      rows.push(r);
     });
   });
 

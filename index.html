@@ -25,11 +25,19 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const provider = new GoogleAuthProvider();
+  provider.setCustomParameters({ hd: ALLOWED_DOMAIN });
 
   // 監聽登入狀態
   onAuthStateChanged(auth, user => {
     if(user){
-      // 測試模式：暫時允許所有 Google 帳號，確認功能後再加網域限制
+      const domain = user.email.split("@")[1];
+      if(domain !== ALLOWED_DOMAIN){
+        // 非公司帳號，強制登出
+        signOut(auth);
+        showLoginPage("此工具僅限 @" + ALLOWED_DOMAIN + " 帳號使用，請使用公司帳號登入");
+        return;
+      }
+      // 公司帳號，顯示工具
       document.getElementById("login-page").style.display = "none";
       document.getElementById("app-page").style.display = "block";
       document.getElementById("user-name").textContent = user.displayName || user.email;

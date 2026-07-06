@@ -1128,7 +1128,7 @@ function reconcile(sourceList, bankList){
     for(let i=0; i<bankList.length; i++){
       if(bankUsed.has(i)) continue;
       const b = bankList[i];
-      if(dateDiffDays(s.dateKey, b.dateKey)<=1
+      if(dateDiffDays(s.dateKey, b.dateKey)<=5
         && b.amount===s.amount
         && last5match(s.last5, b)){
         found = i; break;
@@ -1144,7 +1144,7 @@ function reconcile(sourceList, bankList){
     const candidates = bankList
       .map((b,i)=>({...b,_i:i}))
       .filter(b => !bankUsed.has(b._i)
-        && dateDiffDays(s.dateKey, b.dateKey)<=1
+        && dateDiffDays(s.dateKey, b.dateKey)<=5
         && (last5match(s.last5, b) || nameInNote(s.houseName||s.objName||'', b.note||'')));
 
     const combo = findSubsetSum(candidates, s.amount);

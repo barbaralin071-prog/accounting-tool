@@ -250,7 +250,13 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 ════════════════════════════════════════════ -->
 <div class="panel active" id="panel-fang">
 
-  <!-- 上傳區 -->
+  <!-- ── 收入比對 ── -->
+  <div style="font-size:15px;font-weight:700;padding:4px 0 12px;border-bottom:2px solid var(--border);margin-bottom:16px;">
+    📥 收入比對
+    <span style="font-size:12px;font-weight:400;color:var(--ink-soft);margin-left:8px;">出納：上傳網銀＋香蕉帳務報表＋收款單 → 下載金流表　｜　會計：上傳金流表 → 下載傳票</span>
+  </div>
+
+  <!-- 出納上傳區 -->
   <div id="fang-upload">
     <div class="upload-row" style="grid-template-columns:1fr 1fr 1fr;">
       <div>
@@ -281,6 +287,25 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     <div class="errbox" id="fang-err"></div>
     <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
       <button class="btn primary" id="fang-btn-match" disabled>開始比對</button>
+    </div>
+
+    <!-- 會計用：上傳正本金流表 → 下載傳票（獨立於比對，隨時可用）-->
+    <div style="margin-top:16px;padding-top:16px;border-top:1px dashed var(--border);">
+      <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:8px;">
+        📌 <b>會計</b>：出納補齊金流表後，直接上傳正本金流表產出傳票（不需重新比對）
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="dropzone" id="fang-dz-cashflow" style="padding:10px 18px;flex:0 0 auto;min-width:200px;">
+          <div class="dz-icon">📊</div>
+          <div class="dz-label">上傳正本金流表</div>
+          <div class="dz-hint">金流表_房管處_YYYY-MM-DD.xlsx</div>
+        </div>
+        <input type="file" id="fang-file-cashflow" accept=".xlsx" hidden>
+        <div id="fang-cashflow-status" style="font-size:13px;color:var(--ink-soft);flex:1;">
+          上傳出納確認後的正本金流表，即可下載傳票匯入檔
+        </div>
+        <button class="btn primary" id="fang-btn-voucher" disabled>下載傳票匯入檔</button>
+      </div>
     </div>
   </div>
 
@@ -358,23 +383,6 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </div>
 
       <div class="actbar" style="flex-direction:column;align-items:stretch;gap:14px;">
-        <!-- 正本金流表上傳區（在結果頁面） -->
-        <div style="padding:12px 0;border-bottom:1px dashed var(--border);">
-          <div style="font-size:12px;color:var(--ink-soft);margin-bottom:8px;">
-            📌 出納確認金流表補齊後，上傳正本金流表即可產出傳票匯入檔
-          </div>
-          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-            <div class="dropzone" id="fang-dz-cashflow" style="padding:12px 20px;flex:0 0 auto;min-width:220px;">
-              <div class="dz-icon">📊</div>
-              <div class="dz-label">上傳正本金流表</div>
-              <div class="dz-hint">金流表_房管處_YYYY-MM-DD.xlsx</div>
-            </div>
-            <input type="file" id="fang-file-cashflow" accept=".xlsx" hidden>
-            <div id="fang-cashflow-status" style="font-size:13px;color:var(--ink-soft);flex:1;">
-              尚未上傳正本金流表，上傳後可產出傳票匯入檔
-            </div>
-          </div>
-        </div>
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
           <div style="display:flex;flex-direction:column;gap:6px;">
             <div class="bal" id="fang-bal">—</div>
@@ -383,7 +391,6 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <div class="btns">
             <button class="btn secondary" id="fang-btn-reset">重新上傳</button>
             <button class="btn primary" id="fang-btn-cashflow" disabled>下載金流表</button>
-            <button class="btn primary" id="fang-btn-voucher" disabled>下載傳票匯入檔</button>
           </div>
         </div>
       </div>
@@ -391,13 +398,13 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 
   </div><!-- /fang-result -->
 
-  <!-- ── 第二次：請款支出金流表 ── -->
+  <!-- ── 支出請款比對 ── -->
   <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
-    <div style="font-size:14px;font-weight:700;margin-bottom:6px;">
-      📤 第二次：請款支出金流表
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      📤 支出請款比對
     </div>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
-      上傳請款單／退款單，自動產出支出金流表
+      出納：上傳請款單＋退款單 → 下載支出金流表　｜　會計：上傳支出金流表 → 下載傳票
     </div>
     <div class="card">
       <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
@@ -481,13 +488,13 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
-  <!-- ── 第三次：沖帳傳票（整合電子發票）── -->
+  <!-- ── 出款後開立電子發票 ── -->
   <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
-    <div style="font-size:14px;font-weight:700;margin-bottom:6px;">
-      🔄 第三次：沖帳傳票
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      🔄 出款後開立電子發票
     </div>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
-      上傳金流表＋收入傳票＋支出傳票＋電子發票，產出最終沖帳傳票匯入檔
+      會計：上傳金流表＋收入傳票＋支出傳票＋電子發票 → 下載沖帳傳票
     </div>
     <div class="card">
       <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
@@ -1722,9 +1729,7 @@ function renderFangResult(){
     }
   }
 
-  // 傳票：一定要上傳正本金流表且無未核對筆才能下載
-  // 強制先 disabled，再由 updateFangVoucherBtn 決定是否開放
-  document.getElementById("fang-btn-voucher").disabled=true;
+  // 傳票按鈕已移至首頁（由上傳正本金流表控制）
   updateFangVoucherBtn();
   // 金流表：比對完成後就可以下載
   document.getElementById("fang-btn-cashflow").disabled=false;

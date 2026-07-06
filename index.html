@@ -965,8 +965,9 @@ function parseThirdXlsx(data){
   const sheetName=wb.SheetNames.includes("全部資料")?"全部資料":wb.SheetNames[wb.SheetNames.length-1];
   const ws=wb.Sheets[sheetName];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-  const hi=aoa.findIndex(r=>r.some(c=>c==="物件名稱")&&r.some(c=>c==="付款狀態"));
-  if(hi===-1)throw new Error("找不到「物件名稱」欄位，請確認是帳務管理報表格式");
+  // 找真正的標題列：第一欄是「No.」的那列
+  const hi=aoa.findIndex(r=>r&&(r[0]==="No."||r[0]==="no.")&&r.some(c=>c==="物件名稱"));
+  if(hi===-1)throw new Error("找不到帳務報表標題列，請確認是帳務管理報表格式");
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
   return aoa.slice(hi+1)

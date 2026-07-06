@@ -965,8 +965,8 @@ function parseThirdXlsx(data){
   const sheetName=wb.SheetNames.includes("全部資料")?"全部資料":wb.SheetNames[wb.SheetNames.length-1];
   const ws=wb.Sheets[sheetName];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-  const hi=aoa.findIndex(r=>r.some(c=>c==="編號"));
-  if(hi===-1)throw new Error("找不到「編號」欄位，請確認是帳務管理報表格式");
+  const hi=aoa.findIndex(r=>r.some(c=>c==="物件名稱")&&r.some(c=>c==="付款狀態"));
+  if(hi===-1)throw new Error("找不到「物件名稱」欄位，請確認是帳務管理報表格式");
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
   return aoa.slice(hi+1)
@@ -2178,36 +2178,31 @@ function parseExpenseCashflowXlsx(data){
     const ws=wb.Sheets[sheetName];
     const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
 
-    // debug：看前3列
-    console.log(`=== ${sheetName} ===`);
-    aoa.slice(0,3).forEach((r,i)=>console.log(`[${i}]`,JSON.stringify(r)));
-
-    const hi=aoa.findIndex(r=>r&&r.some(c=>c==="說明")&&r.some(c=>c==="支出"));
-    if(hi===-1){console.log(`${sheetName}: 找不到標題`); return;}
+    // 找標題列：只需含「支出」欄位即可
+    const hi=aoa.findIndex(r=>r&&r.some(c=>c==="支出"));
+    if(hi===-1) return;
 
     const headers=aoa[hi];
-    const iDesc=headers.findIndex(h=>h==="說明");
+    // 說明欄：找「說明」，找不到就用 col 1（金流表說明通常在第二欄）
+    const iDescByName=headers.findIndex(h=>h==="說明");
+    const iDesc=iDescByName>=0?iDescByName:1;
     const iOrderNo=headers.findIndex(h=>h==="單號");
     const iExpense=headers.findIndex(h=>h==="支出");
     const iFee=headers.findIndex(h=>h==="匯費");
 
-    console.log(`標題列index: ${hi}, iDesc:${iDesc}, iExpense:${iExpense}`);
-
-    aoa.slice(hi+1).forEach((r,ri)=>{
-      if(ri<2) console.log(`資料列[${ri}]:`, JSON.stringify(r?.slice(0,7)));
+    aoa.slice(hi+1).forEach(r=>{
       const rawDesc=r[iDesc]?String(r[iDesc]):"";
       const desc=rawDesc.replace(/_x000d_/g," ").replace(/[\r\n]+/g," ").replace(/(\d)\s+(\d)/g,"$1$2").replace(/\s+/g," ").trim();
       const orderNo=iOrderNo>=0&&r[iOrderNo]?String(r[iOrderNo]).trim():"";
       const expense=iExpense>=0&&r[iExpense]?Number(r[iExpense]):null;
       const fee=iFee>=0&&r[iFee]?Number(r[iFee]):0;
       if(!expense||isNaN(expense)||expense<=0) return;
-      // 說明空白時用單號代替
       const finalDesc=desc||orderNo||"（無說明）";
       allRows.push({desc:finalDesc, orderNo, expense, fee:isNaN(fee)?0:fee, sheet:sheetName});
     });
   });
 
-  if(!allRows.length) throw new Error("找不到支出資料，請確認是支出金流表格式");
+  if(!allRows.length) throw new Error("找不到支出資料，請確認金流表含「支出」欄位");
   return allRows;
 }
 
@@ -2245,82 +2240,91 @@ function buildExpenseVoucherLines(row){
     lines.push({acctCode:"1110-01",custCode:code,dc:2,amount:amt,summary:desc});
 
   }else{
-    const parts=desc.replace(/-[^代]*代$/,"");
-    const houseItems=parseExpenseItems(parts);
+    const hasAmt=desc.includes("$");
 
-    // 說明欄沒有金額標記時，整筆用 row.expense
-    const hasAmtInDesc=desc.includes("$");
-    if(!hasAmtInDesc||houseItems.every(i=>i.amount===0)){
+    if(!hasAmt){
       // 無金額標記：整筆一列借方
-      lines.push({acctCode:"131450-01",custCode:code,dc:1,amount:amt,summary:desc});
+      const cleanDesc=desc.replace(/-\S+代$/,"").trim();
+      lines.push({acctCode:"131450-01",custCode:code,dc:1,amount:amt,
+        summary:cleanDesc});
+      if(fee>0) lines.push({acctCode:"6270",custCode:"",dc:1,amount:fee,summary:"匯款手續費"});
+      const isStaff=/代$/.test(desc.trim());
+      lines.push({acctCode:"1110-01",custCode:isStaff?"":code,dc:2,
+        amount:amt+(fee||0),summary:cleanDesc});
     }else{
-      houseItems.forEach(item=>{
-        const hm=matchHousing(item.houseName);
-        const c=hm?hm.code:"";
-        lines.push({acctCode:"131450-01",custCode:c,dc:1,amount:item.amount,
-          summary:item.summary});
+      // 有金額標記：解析多房源
+      const items=parseExpenseItems(desc);
+      const multiHouse=items.length>1;
+
+      items.forEach(item=>{
+        // 摘要：去掉金額標記
+        const summary=item.descs.join("、").replace(/\$[\d,]+/g,"").trim();
+        lines.push({acctCode:"131450-01",custCode:item.code,dc:1,
+          amount:item.amt,summary});
       });
-    }
 
-    if(fee>0){
-      lines.push({acctCode:"6270",custCode:"",dc:1,amount:fee,summary:"匯款手續費"});
-    }
+      if(fee>0) lines.push({acctCode:"6270",custCode:"",dc:1,amount:fee,summary:"匯款手續費"});
 
-    const isStaff=/代$/.test(desc.trim());
-    const totalAmt=hasAmtInDesc&&!houseItems.every(i=>i.amount===0)
-      ?houseItems.reduce((s,i)=>s+i.amount,0)+(fee||0)
-      :amt+(fee||0);
-    const allSummary=desc;
-    lines.push({acctCode:"1110-01",custCode:isStaff?"":code,dc:2,
-      amount:totalAmt,summary:allSummary});
+      // 貸方：多房源時客供商空白，單房源同借方
+      const isStaff=/代$/.test(desc.trim());
+      const creditCode=multiHouse?"":isStaff?"":items[0]?.code||code;
+      const allSummary=items.map(i=>i.descs.join("、")).join("、")
+        .replace(/\$[\d,]+/g,"").trim();
+      lines.push({acctCode:"1110-01",custCode:creditCode,dc:2,
+        amount:amt+(fee||0),summary:allSummary});
+    }
   }
   return lines;
 }
 
 // 解析支出說明中的多房源項目和金額
 function parseExpenseItems(desc){
-  // 例如：「雙十－換臉盆落水頭$1500、板橋文昌24-馬桶落水皮$800」
-  const items=[];
-  let currentHouse="";
-  let currentItems=[];
-  let currentAmt=0;
+  // 去掉結尾的 -XXX代
+  const clean=desc.replace(/-\S+代$/,"").trim();
+  const segments=clean.split("、");
 
-  const segments=desc.split("、");
+  const items=[];
+  let curCode=null, curName="", curDescs=[], curAmt=0;
+
   segments.forEach(seg=>{
+    seg=seg.trim();
     // 抓金額
-    const amtMatch=seg.match(/\$(\d[\d,]*)/);
-    const amt=amtMatch?parseInt(amtMatch[1].replace(/,/g,"")):0;
+    const amtM=seg.match(/\$([\d,]+)/);
+    const amt=amtM?parseInt(amtM[1].replace(/,/g,"")):0;
     // 去掉金額
     const cleanSeg=seg.replace(/\$[\d,]+/g,"").trim();
-    // 嘗試比對房源
-    const hm=matchHousing(cleanSeg.split("-")[0].trim());
+    // 嘗試比對房源（第一個-之前）
+    const firstPart=cleanSeg.split("-")[0].trim();
+    const hm=matchHousing(firstPart);
+
     if(hm){
-      // 新房源：先存前一個
-      if(currentHouse&&currentAmt>0){
-        items.push({houseName:currentHouse,amount:currentAmt,
-          summary:currentItems.join("、")});
+      // 找到新房源：先存前一個
+      if(curCode!==null){
+        items.push({code:curCode,name:curName,descs:curDescs,amt:curAmt});
       }
-      currentHouse=hm.matchedName;
-      currentItems=[cleanSeg.replace(/^[^-]+-?/,"").trim()||cleanSeg];
-      currentAmt=amt;
+      curCode=hm.code;
+      curName=hm.matchedName;
+      // 摘要：完整的 cleanSeg（去掉金額但保留項目描述）
+      curDescs=[cleanSeg];
+      curAmt=amt;
     }else{
       // 同一房源的額外項目
-      currentItems.push(cleanSeg);
-      currentAmt+=amt;
+      curDescs.push(cleanSeg);
+      curAmt+=amt;
     }
   });
-  // 最後一個房源
-  if(currentHouse&&currentAmt>0){
-    items.push({houseName:currentHouse,amount:currentAmt,
-      summary:currentItems.join("、")});
+
+  if(curCode!==null){
+    items.push({code:curCode,name:curName,descs:curDescs,amt:curAmt});
   }
-  // 若完全找不到房源，整筆處理
+
+  // 若完全找不到房源，整筆一列
   if(!items.length){
     const totalAmt=segments.reduce((s,seg)=>{
-      const m=seg.match(/\$(\d[\d,]*)/);
+      const m=seg.match(/\$([\d,]+)/);
       return s+(m?parseInt(m[1].replace(/,/g,"")):0);
     },0);
-    items.push({houseName:"",amount:totalAmt||0,summary:desc});
+    items.push({code:"",name:"",descs:[desc],amt:totalAmt});
   }
   return items;
 }

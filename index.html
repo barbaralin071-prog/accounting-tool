@@ -3311,27 +3311,31 @@ document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
   const cf=bizInvState.cashflow;
   if(!cf) return;
 
-  // 建立原始說明→回填後說明的對應表（用原始說明+金額當key）
-  const descMap=new Map();
+  // 建立 index→新說明 的對應（reconcileBizInvoice 已回填發票號碼到 cfRow.desc）
+  const descByIdx=new Map();
   bizInvState.matched.forEach(item=>{
-    const key=`${item.cfRow.amount}`;
-    // 找原始金流表列（金額相符且說明相近）
-    const origRow=cf.find(r=>r.amount===item.cfRow.amount&&
-      item.cfRow.desc.startsWith(r.desc.split("-")[0]));
-    if(origRow) descMap.set(origRow, item.cfRow.desc);
+    // 找原始 cf 裡對應的 index（用金額和說明開頭比對）
+    const origDesc=item.cfRow.desc
+      .replace(/-[A-Z]{2}[\-\d]+/g,"")  // 去掉發票號碼
+      .replace(/-+$/,"").trim();
+    const idx=cf.findIndex(r=>
+      r.amount===item.cfRow.amount&&
+      origDesc.startsWith(r.desc.split("-")[0].trim())
+    );
+    if(idx>=0) descByIdx.set(idx, item.cfRow.desc);
   });
 
   const aoa=[];
   aoa.push(["115年","國泰世華/仁愛分行 #57668 - 銀存明細  業務處",null,null,null,null,null]);
   aoa.push(["日期",null,"說明","收入","支出","匯費","餘額"]);
   let lastDate="";
-  cf.forEach(row=>{
+  cf.forEach((row,idx)=>{
     const dateCell=row.date===lastDate?null:row.date;
-    // 用回填後的說明（若有比對到）
-    const desc=descMap.get(row)||row.desc;
+    const desc=descByIdx.has(idx)?descByIdx.get(idx):row.desc;
     aoa.push([dateCell,desc,null,row.amount,null,null,null]);
     lastDate=row.date;
   });
+
   const ws=XLSX.utils.aoa_to_sheet(aoa);
   ws["!cols"]=[{wch:10},{wch:60},{wch:12},{wch:12},{wch:10},{wch:8},{wch:12}];
   const wb=XLSX.utils.book_new();

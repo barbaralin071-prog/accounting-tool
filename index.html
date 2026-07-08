@@ -3105,13 +3105,17 @@ function parseBizCashflowXlsx(data){
   for(const r of aoa){
     const dateCell=r[0]?String(r[0]).trim():"";
     if(dateCell&&/\d+月\d+日/.test(dateCell)) currentDate=dateCell;
+    else if(r[0] instanceof Date){
+      try{const roc=toRoc(r[0]);currentDate=roc.month+"月"+roc.day+"日";}catch(e){}
+    }
     const desc=r[1]?String(r[1]).replace(/[\r\n]+/g," ").trim():"";
     const income=r[3]?Number(r[3]):null;
     if(!desc||!income||isNaN(income)||income<=0) continue;
     if(desc==="說明") continue;
-    // 抓發票號碼（BR/ZZ/ZX 開頭）
+    if(!desc.includes("服務費")) continue;
+    // 抓發票號碼（兩個大寫英文字母開頭）
     const invNos=[];
-    const invMatches=desc.matchAll(/([A-Z]{2}\d+)/g);
+    const invMatches=desc.matchAll(/([A-Z]{2}[\-\d]+)/g);
     for(const m of invMatches) invNos.push(m[1]);
     rows.push({date:currentDate, desc, amount:income, invNos, raw:r});
   }
@@ -3124,52 +3128,77 @@ function reconcileBizInvoice(cashflowRows, invoices){
   const matched=[];
   const unmatched=[];
 
-  // 只處理含「服務費」且有發票號碼的金流表列
-  const serviceRows=cashflowRows.filter(r=>
-    r.desc.includes("服務費")&&r.invNos.length>0);
+  const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
 
   for(const cfRow of serviceRows){
-    // 找對應的發票（案件地址出現在說明欄開頭 ＋ 金額相符）
+    const hasInvNo=cfRow.invNos.length>0;
     const matchedInvs=[];
-    for(let i=0;i<invoices.length;i++){
-      if(invUsed.has(i)) continue;
-      const inv=invoices[i];
-      const addrMatch=cfRow.desc.startsWith(inv.caseAddr)||
-        inv.caseAddr.length>5&&cfRow.desc.includes(inv.caseAddr.slice(0,20));
-      const amtMatch=Math.abs(inv.total-cfRow.amount)<1||
-        cfRow.invNos.includes(inv.invoiceNo);
-      if(addrMatch&&amtMatch){
-        matchedInvs.push({idx:i,inv});
-      }
-    }
-    // 兩個發票的情況：金額加總等於金流表金額
-    if(matchedInvs.length===0){
-      // 嘗試找兩筆加總
-      const candidates=invoices
-        .map((inv,i)=>({idx:i,inv}))
-        .filter(({idx,inv})=>!invUsed.has(idx)&&
-          (cfRow.desc.includes(inv.caseAddr.slice(0,15))||
-           cfRow.invNos.includes(inv.invoiceNo)));
-      if(candidates.length>=2){
-        for(let a=0;a<candidates.length;a++){
-          for(let b=a+1;b<candidates.length;b++){
-            const sum=candidates[a].inv.total+candidates[b].inv.total;
-            if(Math.abs(sum-cfRow.amount)<1){
-              invUsed.add(candidates[a].idx);
-              invUsed.add(candidates[b].idx);
-              matched.push({cfRow,invs:[candidates[a].inv,candidates[b].inv]});
-              goto_next:; break;
-            }
-          }
-          if(matched[matched.length-1]?.cfRow===cfRow) break;
+
+    // 先用發票號碼直接找
+    if(hasInvNo){
+      for(let i=0;i<invoices.length;i++){
+        if(invUsed.has(i)) continue;
+        const inv=invoices[i];
+        // 發票號碼去掉連字號比對（DT-50574512 vs DT50574512）
+        const invNoClean=inv.invoiceNo.replace(/-/g,"");
+        const cfInvNosClean=cfRow.invNos.map(n=>n.replace(/-/g,""));
+        if(cfInvNosClean.includes(invNoClean)){
+          matchedInvs.push({idx:i,inv});
         }
       }
-      if(!matched.length||matched[matched.length-1]?.cfRow!==cfRow){
-        unmatched.push(cfRow);
+    }
+
+    // 沒有發票號碼或找不到 → 用案件地址＋金額比對
+    if(matchedInvs.length===0){
+      for(let i=0;i<invoices.length;i++){
+        if(invUsed.has(i)) continue;
+        const inv=invoices[i];
+        const addrMatch=inv.caseAddr&&(
+          cfRow.desc.startsWith(inv.caseAddr)||
+          cfRow.desc.includes(inv.caseAddr.slice(0,20)));
+        const amtMatch=Math.abs(inv.total-cfRow.amount)<1;
+        if(addrMatch&&amtMatch){
+          matchedInvs.push({idx:i,inv});
+        }
       }
-    }else{
+    }
+
+    // 多發票加總等於金流表金額
+    if(matchedInvs.length===0||
+      (matchedInvs.length>0&&Math.abs(matchedInvs.reduce((s,m)=>s+m.inv.total,0)-cfRow.amount)>1)){
+      // 找同案件地址的所有發票，加總看是否符合
+      const candidates=invoices
+        .map((inv,i)=>({idx:i,inv}))
+        .filter(({idx,inv})=>{
+          if(invUsed.has(idx)) return false;
+          const addrMatch=inv.caseAddr&&cfRow.desc.includes(inv.caseAddr.slice(0,15));
+          const invNoClean=inv.invoiceNo.replace(/-/g,"");
+          const cfInvNosClean=cfRow.invNos.map(n=>n.replace(/-/g,""));
+          const invNoMatch=cfInvNosClean.includes(invNoClean);
+          return addrMatch||invNoMatch;
+        });
+
+      // 找加總等於金流表金額的子集
+      const sum=candidates.reduce((s,c)=>s+c.inv.total,0);
+      if(Math.abs(sum-cfRow.amount)<1&&candidates.length>0){
+        candidates.forEach(({idx})=>invUsed.add(idx));
+        const invNosStr=candidates.map(c=>c.inv.invoiceNo).join("+");
+        const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
+        matched.push({cfRow:{...cfRow,desc:newDesc},invs:candidates.map(c=>c.inv)});
+        continue;
+      }
+
+      if(matchedInvs.length===0){
+        unmatched.push(cfRow);
+        continue;
+      }
+    }
+
+    if(matchedInvs.length>0){
       matchedInvs.forEach(({idx})=>invUsed.add(idx));
-      matched.push({cfRow,invs:matchedInvs.map(m=>m.inv)});
+      const invNosStr=matchedInvs.map(m=>m.inv.invoiceNo).join("+");
+      const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
+      matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs.map(m=>m.inv)});
     }
   }
   return{matched,unmatched};
@@ -3318,17 +3347,21 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     const rocYear=invs[0].rocYear||115;
     const dateStr=cfRow.date||"";
 
-    // 借方第一列：1110-02，摘要含所有買受人
-    const buyersDesc=invs.map(inv=>`${inv.buyerName}-服務費`).join("+");
+    // 借方第一列：1110-02，摘要用金流表原始說明（含所有買受人）
+    // 去掉發票號碼部分作為摘要
+    const descForSummary=cfRow.desc.replace(/-[A-Z]{2}[\-\d]+/g,"").replace(/-+$/,"").trim();
     rows.push([rocYear,"DEFAULT",3,dateStr,"1110-02","",1,cfRow.amount,
-      `${addr}-${buyersDesc}`]);
+      descForSummary]);
 
     // 每張發票兩列貸方
     invs.forEach(inv=>{
-      const s1=`${addr}-${inv.buyerName}-服務費`;
-      const s2=`${addr}-${inv.buyerName}-服務費-${inv.invoiceNo}`;
-      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"4101-03","",2,inv.untaxed,s1]);
-      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"2290","",2,inv.tax,s2]);
+      const buyerName=inv.buyerName||"";
+      const s1=`${addr}-${buyerName}-服務費`;
+      const s2=`${addr}-${buyerName}-服務費-${inv.invoiceNo}`;
+      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"4101-03","",2,
+        Math.round(inv.untaxed),s1]);
+      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"2290","",2,
+        Math.round(inv.tax),s2]);
     });
   });
 

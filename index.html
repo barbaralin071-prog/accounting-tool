@@ -3310,22 +3310,25 @@ function renderBizInvResult(){
 document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
   const cf=bizInvState.cashflow;
   if(!cf) return;
-  // 建立已比對的金流表列 → invNos 對應表
-  const matchMap=new Map();
+
+  // 建立原始說明→回填後說明的對應表（用原始說明+金額當key）
+  const descMap=new Map();
   bizInvState.matched.forEach(item=>{
-    matchMap.set(item.cfRow,item.invs);
+    const key=`${item.cfRow.amount}`;
+    // 找原始金流表列（金額相符且說明相近）
+    const origRow=cf.find(r=>r.amount===item.cfRow.amount&&
+      item.cfRow.desc.startsWith(r.desc.split("-")[0]));
+    if(origRow) descMap.set(origRow, item.cfRow.desc);
   });
 
-  // 重建金流表格式
   const aoa=[];
   aoa.push(["115年","國泰世華/仁愛分行 #57668 - 銀存明細  業務處",null,null,null,null,null]);
   aoa.push(["日期",null,"說明","收入","支出","匯費","餘額"]);
   let lastDate="";
   cf.forEach(row=>{
     const dateCell=row.date===lastDate?null:row.date;
-    const invs=matchMap.get(row);
-    let desc=row.desc;
-    // 如果有比對到發票，說明欄維持原樣（已有發票號碼）
+    // 用回填後的說明（若有比對到）
+    const desc=descMap.get(row)||row.desc;
     aoa.push([dateCell,desc,null,row.amount,null,null,null]);
     lastDate=row.date;
   });

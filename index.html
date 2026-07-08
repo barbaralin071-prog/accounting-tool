@@ -3124,82 +3124,38 @@ function parseBizCashflowXlsx(data){
 
 // 比對：案件地址＋金額(含稅)
 function reconcileBizInvoice(cashflowRows, invoices){
-  const invUsed=new Set();
   const matched=[];
   const unmatched=[];
 
   const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
 
   for(const cfRow of serviceRows){
-    const hasInvNo=cfRow.invNos.length>0;
-    const matchedInvs=[];
+    // 從說明欄抓地址（開頭到第一個「-」之前，或整段）
+    const addrPart=cfRow.desc.split("-")[0].trim();
 
-    // 先用發票號碼直接找
-    if(hasInvNo){
-      for(let i=0;i<invoices.length;i++){
-        if(invUsed.has(i)) continue;
-        const inv=invoices[i];
-        // 發票號碼去掉連字號比對（DT-50574512 vs DT50574512）
-        const invNoClean=inv.invoiceNo.replace(/-/g,"");
-        const cfInvNosClean=cfRow.invNos.map(n=>n.replace(/-/g,""));
-        if(cfInvNosClean.includes(invNoClean)){
-          matchedInvs.push({idx:i,inv});
-        }
-      }
-    }
+    // 找案件地址相符的所有發票
+    const matchedInvs=invoices.filter(inv=>
+      inv.caseAddr&&(
+        inv.caseAddr===addrPart||
+        cfRow.desc.startsWith(inv.caseAddr)||
+        inv.caseAddr.includes(addrPart.slice(0,15))||
+        addrPart.includes(inv.caseAddr.slice(0,15))
+      )
+    );
 
-    // 沒有發票號碼或找不到 → 用案件地址＋金額比對
     if(matchedInvs.length===0){
-      for(let i=0;i<invoices.length;i++){
-        if(invUsed.has(i)) continue;
-        const inv=invoices[i];
-        const addrMatch=inv.caseAddr&&(
-          cfRow.desc.startsWith(inv.caseAddr)||
-          cfRow.desc.includes(inv.caseAddr.slice(0,20)));
-        const amtMatch=Math.abs(inv.total-cfRow.amount)<1;
-        if(addrMatch&&amtMatch){
-          matchedInvs.push({idx:i,inv});
-        }
-      }
+      unmatched.push(cfRow);
+      continue;
     }
 
-    // 多發票加總等於金流表金額
-    if(matchedInvs.length===0||
-      (matchedInvs.length>0&&Math.abs(matchedInvs.reduce((s,m)=>s+m.inv.total,0)-cfRow.amount)>1)){
-      // 找同案件地址的所有發票，加總看是否符合
-      const candidates=invoices
-        .map((inv,i)=>({idx:i,inv}))
-        .filter(({idx,inv})=>{
-          if(invUsed.has(idx)) return false;
-          const addrMatch=inv.caseAddr&&cfRow.desc.includes(inv.caseAddr.slice(0,15));
-          const invNoClean=inv.invoiceNo.replace(/-/g,"");
-          const cfInvNosClean=cfRow.invNos.map(n=>n.replace(/-/g,""));
-          const invNoMatch=cfInvNosClean.includes(invNoClean);
-          return addrMatch||invNoMatch;
-        });
-
-      // 找加總等於金流表金額的子集
-      const sum=candidates.reduce((s,c)=>s+c.inv.total,0);
-      if(Math.abs(sum-cfRow.amount)<1&&candidates.length>0){
-        candidates.forEach(({idx})=>invUsed.add(idx));
-        const invNosStr=candidates.map(c=>c.inv.invoiceNo).join("+");
-        const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
-        matched.push({cfRow:{...cfRow,desc:newDesc},invs:candidates.map(c=>c.inv)});
-        continue;
-      }
-
-      if(matchedInvs.length===0){
-        unmatched.push(cfRow);
-        continue;
-      }
+    // 回填發票號碼到說明欄（若原本沒有）
+    const hasInvNo=cfRow.invNos.length>0;
+    let newDesc=cfRow.desc;
+    if(!hasInvNo){
+      const invNosStr=matchedInvs.map(inv=>inv.invoiceNo).join("-");
+      newDesc=`${cfRow.desc}-${invNosStr}`;
     }
-
-    if(matchedInvs.length>0){
-      matchedInvs.forEach(({idx})=>invUsed.add(idx));
-      const invNosStr=matchedInvs.map(m=>m.inv.invoiceNo).join("+");
-      const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
-      matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs.map(m=>m.inv)});
-    }
+    matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs});
   }
   return{matched,unmatched};
 }

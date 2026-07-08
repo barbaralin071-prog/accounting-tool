@@ -3111,7 +3111,7 @@ function parseBizCashflowXlsx(data){
     if(desc==="說明") continue;
     // 抓發票號碼（BR/ZZ/ZX 開頭）
     const invNos=[];
-    const invMatches=desc.matchAll(/([BZ][RZX]\d+)/g);
+    const invMatches=desc.matchAll(/([A-Z]{2}\d+)/g);
     for(const m of invMatches) invNos.push(m[1]);
     rows.push({date:currentDate, desc, amount:income, invNos, raw:r});
   }

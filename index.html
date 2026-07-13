@@ -3130,18 +3130,18 @@ function reconcileBizInvoice(cashflowRows, invoices){
   const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
 
   for(const cfRow of serviceRows){
-    // 從說明欄抓地址（開頭到第一個「-」之前，或整段）
+    // 從說明欄抓地址（開頭到第一個「-」之前）
     const addrPart=cfRow.desc.split("-")[0].trim();
 
-    // 找案件地址相符的所有發票
-    const matchedInvs=invoices.filter(inv=>
-      inv.caseAddr&&(
-        inv.caseAddr===addrPart||
-        cfRow.desc.startsWith(inv.caseAddr)||
-        inv.caseAddr.includes(addrPart.slice(0,15))||
-        addrPart.includes(inv.caseAddr.slice(0,15))
-      )
-    );
+    // 比對：案件地址相符 + 買受人名字出現在金流表說明欄
+    const matchedInvs=invoices.filter(inv=>{
+      if(!inv.caseAddr) return false;
+      const addrMatch=cfRow.desc.startsWith(inv.caseAddr)||
+        inv.caseAddr.startsWith(addrPart)||
+        addrPart===inv.caseAddr;
+      const buyerMatch=inv.buyerName&&cfRow.desc.includes(inv.buyerName);
+      return addrMatch&&buyerMatch;
+    });
 
     if(matchedInvs.length===0){
       unmatched.push(cfRow);
@@ -3155,7 +3155,12 @@ function reconcileBizInvoice(cashflowRows, invoices){
       const invNosStr=matchedInvs.map(inv=>inv.invoiceNo).join("-");
       newDesc=`${cfRow.desc}-${invNosStr}`;
     }
-    matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs});
+
+    // 判斷屋主/房客
+    const isOwner=cfRow.desc.includes("屋主");
+    const isTenant=cfRow.desc.includes("房客");
+
+    matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs,isOwner,isTenant});
   }
   return{matched,unmatched};
 }
@@ -3305,16 +3310,16 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
   const rows=[HEADERS];
 
   bizInvState.matched.forEach(item=>{
-    const{cfRow,invs}=item;
+    const{cfRow,invs,isOwner,isTenant}=item;
     const addr=invs[0].caseAddr||cfRow.desc.split("-")[0];
     const rocYear=invs[0].rocYear||115;
     const dateStr=cfRow.date||"";
 
-    // 借方第一列：1110-02，摘要用金流表原始說明（含所有買受人）
-    // 去掉發票號碼部分作為摘要
-    const descForSummary=cfRow.desc.replace(/-[A-Z]{2}[\-\d]+/g,"").replace(/-+$/,"").trim();
-    rows.push([rocYear,"DEFAULT",3,dateStr,"1110-02","",1,cfRow.amount,
-      descForSummary]);
+    // 借方摘要：用金流表說明（去掉發票號碼部分）
+    const debitSummary=cfRow.desc.replace(/-[A-Z]{2}[\-\d]+/g,"").replace(/-+$/,"").trim();
+
+    // 借方：1110-02 全額
+    rows.push([rocYear,"DEFAULT",3,dateStr,"1110-02","",1,cfRow.amount,debitSummary]);
 
     // 每張發票兩列貸方
     invs.forEach(inv=>{

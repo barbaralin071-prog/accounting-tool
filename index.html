@@ -717,15 +717,26 @@ button.btn.ghost:hover{background:var(--accent-soft);}
             <div class="ms-lbl">⚠ 未比對到</div>
           </div>
         </div>
-        <div class="tbl-wrap">
-          <table>
-            <thead><tr>
-              <th>#</th><th>金流表說明</th><th class="right">金額</th>
-              <th>發票號碼</th><th>買受人</th>
-              <th class="right">未稅</th><th class="right">稅額</th><th>狀態</th>
-            </tr></thead>
-            <tbody id="biz-inv-tb"></tbody>
-          </table>
+        <!-- 收合/展開 -->
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);border-top:1px solid var(--border);cursor:pointer;"
+          onclick="const tb=document.getElementById('biz-inv-tb-wrap');const icon=document.getElementById('biz-inv-toggle');tb.hidden=!tb.hidden;icon.textContent=tb.hidden?'▶':'▼';">
+          <div style="font-size:13px;font-weight:600;">
+            <span id="biz-inv-toggle">▶</span>
+            　明細預覽（點擊收合／展開）
+          </div>
+          <div id="biz-inv-summary-line" style="font-size:12.5px;color:var(--ink-soft);"></div>
+        </div>
+        <div id="biz-inv-tb-wrap" hidden>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>金流表說明</th><th class="right">金額</th>
+                <th>發票號碼</th><th>買受人</th>
+                <th class="right">未稅</th><th class="right">稅額</th><th>狀態</th>
+              </tr></thead>
+              <tbody id="biz-inv-tb"></tbody>
+            </table>
+          </div>
         </div>
         <div class="actbar">
           <div class="bal" id="biz-inv-bal">—</div>
@@ -3217,6 +3228,10 @@ document.getElementById("biz-inv-btn-reset").addEventListener("click",()=>{
 
 function renderBizInvResult(){
   document.getElementById("biz-inv-result").hidden=false;
+  // 預設收合
+  document.getElementById("biz-inv-tb-wrap").hidden=true;
+  document.getElementById("biz-inv-toggle").textContent="▶";
+
   const{matched,unmatched}=bizInvState;
   document.getElementById("biz-inv-cnt-matched").textContent=matched.length;
   document.getElementById("biz-inv-cnt-unmatched").textContent=unmatched.length;
@@ -3237,8 +3252,8 @@ function renderBizInvResult(){
       <td class="mono right">${fmtMoney(cfRow.amount)}</td>
       <td class="mono">${invNosStr}</td>
       <td>${buyersStr}</td>
-      <td class="mono right">${fmtMoney(totalUntax)}</td>
-      <td class="mono right">${fmtMoney(totalTax)}</td>
+      <td class="mono right">${fmtMoney(Math.round(totalUntax))}</td>
+      <td class="mono right">${fmtMoney(Math.round(totalTax))}</td>
       <td><span class="tag ok">✓ 比對成功</span></td>
     `;
     tb.appendChild(tr);
@@ -3260,9 +3275,9 @@ function renderBizInvResult(){
   const totalAmt=matched.reduce((s,m)=>s+m.cfRow.amount,0);
   const totalUntax=matched.reduce((s,m)=>s+m.invs.reduce((a,inv)=>a+inv.untaxed,0),0);
   const totalTax=matched.reduce((s,m)=>s+m.invs.reduce((a,inv)=>a+inv.tax,0),0);
-  document.getElementById("biz-inv-bal").innerHTML=
-    `比對成功 ${matched.length} 筆｜金額 ${fmtMoney(totalAmt)}｜未稅 ${fmtMoney(totalUntax)}｜稅額 ${fmtMoney(totalTax)}`;
-
+  const summaryText=`比對成功 ${matched.length} 筆｜金額 ${fmtMoney(totalAmt)}｜未稅 ${fmtMoney(Math.round(totalUntax))}｜稅額 ${fmtMoney(Math.round(totalTax))}`;
+  document.getElementById("biz-inv-bal").textContent=summaryText;
+  document.getElementById("biz-inv-summary-line").textContent=summaryText;
   document.getElementById("biz-inv-btn-cashflow").disabled=matched.length===0;
   document.getElementById("biz-inv-btn-voucher").disabled=matched.length===0;
 }

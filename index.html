@@ -1441,8 +1441,40 @@ function buildVoucherFromCashflowDesc(desc, amount, date, rocYear, options={}){
   const hasService=d.includes("服務費");
   const hasMgmt=d.includes("代管費");
   const hasAdvance=d.includes("代墊款");
+  const hasPettyCash=d.includes("零用金");
+  const hasSplit=d.includes("合拆");
 
-  if(hasAdvance){
+  if(hasPettyCash){
+    // 零用金
+    lines.push({acctCode:"1110-01",custCode:"",dc:1,amount,summary:d});
+    lines.push({acctCode:"110600-03",custCode:"",dc:2,amount,summary:d});
+
+  }else if(hasSplit){
+    // 合拆：解析各房源和金額
+    // 格式：(合拆)和平東10($13020)、南京東368($28348)
+    const splitItems=[];
+    const itemRegex=/([^($、，,()（）\s][^($、，（）]*?)\s*\(\$?([\d,]+)\)/g;
+    let m;
+    while((m=itemRegex.exec(d))!==null){
+      const itemName=m[1].replace(/合拆[:：]?\s*/,"").trim();
+      const itemAmt=parseInt(m[2].replace(/,/g,""));
+      if(itemName&&itemAmt>0){
+        const hm=matchHousing(itemName.split("-")[0].trim());
+        splitItems.push({name:itemName,code:hm?hm.code:"",amt:itemAmt});
+      }
+    }
+    // 借方：整筆
+    lines.push({acctCode:"1110-01",custCode:"",dc:1,amount,summary:d});
+    if(splitItems.length>0){
+      splitItems.forEach(item=>{
+        lines.push({acctCode:"2205-01",custCode:item.code,dc:2,amount:item.amt,summary:d});
+      });
+    }else{
+      // 找不到解析結果，整筆一個貸
+      lines.push({acctCode:"2205-01",custCode:code,dc:2,amount,summary:d});
+    }
+
+  }else if(hasAdvance){
     // 代墊款：借方依各筆原始金額分列，貸方空白
     const ym=extractYearMonth(d);
     const subAmts=options.subAmounts||(amount?[amount]:[]);

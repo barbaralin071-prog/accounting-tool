@@ -878,6 +878,16 @@ const ACCOUNTS = {
 /* ══════════════════════════════════════
    工具函式
 ══════════════════════════════════════ */
+
+// 今日民國日期
+function todayRoc(){
+  const d=new Date();
+  const y=d.getFullYear()-1911;
+  const m=String(d.getMonth()+1).padStart(2,"0");
+  const day=String(d.getDate()).padStart(2,"0");
+  return `${y}/${m}/${day}`;
+}
+const TODAY_ROC=todayRoc();
 function toRoc(raw){
   let y,m,d;
   if(raw instanceof Date){y=raw.getFullYear();m=raw.getMonth()+1;d=raw.getDate();}
@@ -1372,6 +1382,11 @@ function parseCashflowXlsx(data){
     const dateCell=r[0]?String(r[0]).replace(/\s*★\s*/g,"").trim():"";
     if(dateCell && /\d+月\d+日/.test(dateCell)){
       currentDate=dateCell;
+    }else if(r[0] instanceof Date||typeof r[0]==="number"){
+      try{
+        const roc=toRoc(r[0]);
+        currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+      }catch(e){}
     }
 
     // 說明欄（第1欄），清除換行符和多餘空白
@@ -1421,6 +1436,7 @@ function buildVoucherFromCashflowDesc(desc, amount, date, rocYear, options={}){
   }
 
   const hasDeposit=d.includes("押金");
+  const hasEarnest=d.includes("定金");
   const hasRent=d.includes("租金");
   const hasService=d.includes("服務費");
   const hasMgmt=d.includes("代管費");
@@ -1462,6 +1478,15 @@ function buildVoucherFromCashflowDesc(desc, amount, date, rocYear, options={}){
       if(rentIdx>=0) lines[rentIdx].amount+=diff;
       else lines.push({acctCode:"2205-02",custCode:code,dc:2,amount:diff,summary:d});
     }
+
+  }else if(hasEarnest){
+    // 定金：1110-01 借1 / 2205-01 貸2
+    // 摘要：房源-定金-承租人
+    const tenantM=d.match(/定金[-–](.+)$/);
+    const tenant=tenantM?tenantM[1].trim():"";
+    const earnestSummary=`${houseName}-定金${tenant?"-"+tenant:""}`;
+    lines.push({acctCode:"1110-01",custCode:code,dc:1,amount,summary:earnestSummary});
+    lines.push({acctCode:"2205-01",custCode:code,dc:2,amount,summary:earnestSummary});
 
   }else if(hasDeposit){
     // E. 純押金
@@ -1852,20 +1877,26 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
     ?fangState.matched[0].source.rocYear:115;
 
   merged.forEach(row=>{
-    const dateStr=row.date||"";
+    // 將日期轉成民國格式（115/07/03）
+    let dateStr=row.date||TODAY_ROC;
+    // 若是「7月3日」格式，加上民國年
+    const mMatch=dateStr.match(/^(\d+)月(\d+)日$/);
+    if(mMatch){
+      dateStr=`${rocYear}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
+    }
     const options=row.subAmounts?{subAmounts:row.subAmounts}:{};
     const lines=buildVoucherFromCashflowDesc(row.desc, row.amount, dateStr, rocYear, options);
 
     lines.forEach(line=>{
       rows.push([
         rocYear,                          // 年度
-        "",                               // 傳票號碼（系統自動產生）
+        "DEFAULT",                        // 傳票號碼
         3,                                // 傳票種類
-        dateStr,                          // 日期
+        dateStr,                          // 日期（民國格式）
         line.acctCode||"",               // 科目代號
         line.custCode||"",               // 客戶供應商代號
         line.dc,                          // 借/貸
-        line.amount!=null?line.amount:"", // 金額（代墊款貸方留空）
+        line.amount!=null?line.amount:"", // 金額
         line.summary||"",                 // 長摘要
       ]);
     });
@@ -2214,7 +2245,19 @@ function parseExpenseCashflowXlsx(data){
     const iExpense=headers.findIndex(h=>h==="支出");
     const iFee=headers.findIndex(h=>h==="匯費");
 
+    // 找日期欄（col 0）
+    const iDate=0;
+    let currentDate=TODAY_ROC; // 預設今日
+
     aoa.slice(hi+1).forEach(r=>{
+      // 更新日期（若有值則更新，空白沿用上一個）
+      if(r[iDate]){
+        try{
+          const roc=toRoc(r[iDate]);
+          currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+        }catch(e){}
+      }
+
       const rawDesc=r[iDesc]?String(r[iDesc]):"";
       const desc=rawDesc.replace(/_x000d_/g," ").replace(/[\r\n]+/g," ").replace(/(\d)\s+(\d)/g,"$1$2").replace(/\s+/g," ").trim();
       const orderNo=iOrderNo>=0&&r[iOrderNo]?String(r[iOrderNo]).trim():"";
@@ -2222,7 +2265,8 @@ function parseExpenseCashflowXlsx(data){
       const fee=iFee>=0&&r[iFee]?Number(r[iFee]):0;
       if(!expense||isNaN(expense)||expense<=0) return;
       const finalDesc=desc||orderNo||"（無說明）";
-      allRows.push({desc:finalDesc, orderNo, expense, fee:isNaN(fee)?0:fee, sheet:sheetName});
+      allRows.push({desc:finalDesc, orderNo, expense, fee:isNaN(fee)?0:fee,
+        sheet:sheetName, rocDateStr:currentDate});
     });
   });
 
@@ -2443,20 +2487,20 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
       // 完整地址格式：131450-01 借1 / 1110-01 貸2，客供商固定53939912
       const FIXED_CODE="53939912";
       const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0)+(health?.row.expense||0);
-      rows.push([115,"DEFAULT",3,"","131450-01",FIXED_CODE,1,main.row.expense,main.row.desc]);
-      if(mainFee>0) rows.push([115,"DEFAULT",3,"","6270","",1,mainFee,"匯款手續費"]);
-      rows.push([115,"DEFAULT",3,"","1110-01",FIXED_CODE,2,main.row.expense+mainFee,main.row.desc]);
-      if(withhold) rows.push([115,"DEFAULT",3,"","131450-01",FIXED_CODE,1,withhold.row.expense,withhold.row.desc]);
-      if(health) rows.push([115,"DEFAULT",3,"","131450-01",FIXED_CODE,1,health.row.expense,health.row.desc]);
+      rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"131450-01",FIXED_CODE,1,main.row.expense,main.row.desc]);
+      if(mainFee>0) rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"6270","",1,mainFee,"匯款手續費"]);
+      rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"1110-01",FIXED_CODE,2,main.row.expense+mainFee,main.row.desc]);
+      if(withhold) rows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"131450-01",FIXED_CODE,1,withhold.row.expense,withhold.row.desc]);
+      if(health) rows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"131450-01",FIXED_CODE,1,health.row.expense,health.row.desc]);
     }else{
       // 一般房源格式：5990-01 借1 三筆加總 / 1110-01 貸2 各自
       const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0)+(health?.row.expense||0);
       const summary5990=`${houseName}-${ym}租金`;
-      rows.push([115,"DEFAULT",3,"","5990-01",code,1,totalAmt,summary5990]);
-      if(mainFee>0) rows.push([115,"DEFAULT",3,"","6270","",1,mainFee,"匯款手續費"]);
-      rows.push([115,"DEFAULT",3,"","1110-01",code,2,main.row.expense,main.row.desc]);
-      if(withhold) rows.push([115,"DEFAULT",3,"","1110-01",code,2,withhold.row.expense,withhold.row.desc]);
-      if(health) rows.push([115,"DEFAULT",3,"","1110-01",code,2,health.row.expense,health.row.desc]);
+      rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"5990-01",code,1,totalAmt,summary5990]);
+      if(mainFee>0) rows.push([115,"DEFAULT",3,TODAY_ROC,"6270","",1,mainFee,"匯款手續費"]);
+      rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"1110-01",code,2,main.row.expense,main.row.desc]);
+      if(withhold) rows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01",code,2,withhold.row.expense,withhold.row.desc]);
+      if(health) rows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"1110-01",code,2,health.row.expense,health.row.desc]);
     }
   });
 
@@ -2479,17 +2523,17 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0);
     const summary=main.row.desc;
     // 借方：5990-031 加總
-    rows.push([115,"DEFAULT",3,"","5990-031","",1,totalAmt,summary]);
+    rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"5990-031","",1,totalAmt,summary]);
     // 貸方：各自分開
-    rows.push([115,"DEFAULT",3,"","1110-01","",2,main.row.expense,main.row.desc]);
-    if(withhold) rows.push([115,"DEFAULT",3,"","1110-01","",2,withhold.row.expense,withhold.row.desc]);
+    rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"1110-01","",2,main.row.expense,main.row.desc]);
+    if(withhold) rows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01","",2,withhold.row.expense,withhold.row.desc]);
   });
 
   // 一般支出（修繕、退押金、廠商請款等）
   normalRows.forEach(row=>{
     const vLines=buildExpenseVoucherLines(row);
     vLines.forEach(line=>{
-      rows.push([115,"DEFAULT",3,"",
+      rows.push([115,"DEFAULT",3,row.rocDateStr||TODAY_ROC,
         line.acctCode,line.custCode,line.dc,line.amount,line.summary]);
     });
   });

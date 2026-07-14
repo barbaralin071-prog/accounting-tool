@@ -2745,13 +2745,24 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     sheetGroups[sheetName].push(row);
   });
 
-  // 退款單獨立一頁
+  // 退款單依部門分成各自工作頁
   const refundRows=rows.filter(r=>r.source==="退款單");
-  if(refundRows.length) sheetGroups["退款單"]=refundRows;
+  const DEPT_ORDER=["房管處","短租處","業務處"];
+  const deptRefundGroups={};
+  refundRows.forEach(row=>{
+    const dept=row.dept||"其他";
+    if(!deptRefundGroups[dept]) deptRefundGroups[dept]=[];
+    deptRefundGroups[dept].push(row);
+  });
+  [...DEPT_ORDER,...Object.keys(deptRefundGroups).filter(d=>!DEPT_ORDER.includes(d))].forEach(dept=>{
+    if(deptRefundGroups[dept]?.length)
+      sheetGroups[`退款單-${dept}`]=deptRefundGroups[dept];
+  });
 
   // 建立每個工作頁
   const sheetOrder=["全居代管","社宅業務","業務勞報","投資勞報",
-    "公司帳戶+全居包租","工程帳務","全居代管(合作拆帳)","退款單","其他"];
+    "公司帳戶+全居包租","工程帳務","全居代管(合作拆帳)",
+    "退款單-房管處","退款單-短租處","退款單-業務處","退款單-其他","其他"];
 
   sheetOrder.forEach(sheetName=>{
     if(!sheetGroups[sheetName]||!sheetGroups[sheetName].length) return;
@@ -2761,28 +2772,10 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     const aoa=[];
     aoa.push(["日期","說明","單號","收入","支出","匯費","餘額"]);
 
-    if(sheetName==="退款單"){
-      // 退款單依部門分組：房管處→短租處→業務處→其他
-      const DEPT_ORDER=["房管處","短租處","業務處"];
-      const deptGroups={};
-      const deptOrder=[];
+    if(sheetName.startsWith("退款單-")){
+      // 退款單各部門頁：直接列出
       rows.forEach(row=>{
-        const dept=row.dept||"其他";
-        if(!deptGroups[dept]){
-          deptGroups[dept]=[];
-          deptOrder.push(dept);
-        }
-        deptGroups[dept].push(row);
-      });
-      // 依指定順序排列部門
-      const sortedDepts=[
-        ...DEPT_ORDER.filter(d=>deptGroups[d]),
-        ...deptOrder.filter(d=>!DEPT_ORDER.includes(d)),
-      ];
-      sortedDepts.forEach(dept=>{
-        deptGroups[dept].forEach(row=>{
-          aoa.push([null,row.desc,row.orderNo,null,row.amount,null,null]);
-        });
+        aoa.push([null,row.desc,row.orderNo,null,row.amount,null,null]);
       });
     } else {
       // 依收款人分組

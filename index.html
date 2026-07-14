@@ -1876,37 +1876,38 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
   const rocYear=fangState.matched&&fangState.matched.length>0
     ?fangState.matched[0].source.rocYear:115;
 
+  // 按日期分組
+  const dateGroups=new Map();
   merged.forEach(row=>{
-    // 將日期轉成民國格式（115/07/03）
     let dateStr=row.date||TODAY_ROC;
-    // 若是「7月3日」格式，加上民國年
     const mMatch=dateStr.match(/^(\d+)月(\d+)日$/);
     if(mMatch){
       dateStr=`${rocYear}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
     }
-    const options=row.subAmounts?{subAmounts:row.subAmounts}:{};
-    const lines=buildVoucherFromCashflowDesc(row.desc, row.amount, dateStr, rocYear, options);
-
-    lines.forEach(line=>{
-      rows.push([
-        rocYear,                          // 年度
-        "DEFAULT",                        // 傳票號碼
-        3,                                // 傳票種類
-        dateStr,                          // 日期（民國格式）
-        line.acctCode||"",               // 科目代號
-        line.custCode||"",               // 客戶供應商代號
-        line.dc,                          // 借/貸
-        line.amount!=null?line.amount:"", // 金額
-        line.summary||"",                 // 長摘要
-      ]);
-    });
+    if(!dateGroups.has(dateStr)) dateGroups.set(dateStr,[]);
+    dateGroups.get(dateStr).push({...row,dateStr});
   });
 
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:40}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-  XLSX.writeFile(wb,"傳票匯入_房管處_"+new Date().toISOString().slice(0,10)+".xlsx");
+  // 每個日期產出一個Excel
+  dateGroups.forEach((dateRows,dateStr)=>{
+    const rows=[HEADERS];
+    dateRows.forEach(row=>{
+      const options=row.subAmounts?{subAmounts:row.subAmounts}:{};
+      const lines=buildVoucherFromCashflowDesc(row.desc,row.amount,row.dateStr,rocYear,options);
+      lines.forEach(line=>{
+        rows.push([rocYear,"DEFAULT",3,row.dateStr,
+          line.acctCode||"",line.custCode||"",line.dc,
+          line.amount!=null?line.amount:"",line.summary||""]);
+      });
+    });
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:40}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+    // 檔名：收入_傳票匯入_115-07-08.xlsx
+    const fileDate=dateStr.replace(/\//g,"-");
+    XLSX.writeFile(wb,`收入_傳票匯入_${fileDate}.xlsx`);
+  });
 });
 
 document.getElementById("fang-btn-cashflow").addEventListener("click",()=>{
@@ -3139,11 +3140,22 @@ document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
     }
   });
 
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50}];
-  const wb_out=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
-  XLSX.writeFile(wb_out,"傳票匯入_房管處第三次_"+new Date().toISOString().slice(0,10)+".xlsx");
+  // 按日期分組產出多個Excel
+  const dateGrouped=new Map();
+  rows.slice(1).forEach(row=>{
+    const d=row[3]||TODAY_ROC;
+    if(!dateGrouped.has(d)) dateGrouped.set(d,[]);
+    dateGrouped.get(d).push(row);
+  });
+
+  dateGrouped.forEach((dateRows,dateStr)=>{
+    const ws=XLSX.utils.aoa_to_sheet([rows[0],...dateRows]);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50}];
+    const wb_out=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
+    const fileDate=dateStr.replace(/\//g,"-");
+    XLSX.writeFile(wb_out,`出款屋主_傳票匯入_${fileDate}.xlsx`);
+  });
 });
 
 /* ══════════════════════════════════════

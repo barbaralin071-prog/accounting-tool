@@ -2856,9 +2856,10 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     aoa.push(["日期","說明","單號","收入","支出","匯費","餘額"]);
 
     if(sheetName.startsWith("退款單-")){
-      // 退款單各部門頁：直接列出
+      // 退款單各部門頁：直接列出，匯費從 row.transferFee 取
       rows.forEach(row=>{
-        aoa.push([null,row.desc,row.orderNo,null,row.amount,null,null]);
+        const fee=row.transferFee>0?row.transferFee:null;
+        aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null]);
       });
     } else {
       // 依收款人分組

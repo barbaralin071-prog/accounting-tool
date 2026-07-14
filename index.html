@@ -1409,7 +1409,9 @@ function extractYearMonth(desc){
 function buildVoucherFromCashflowDesc(desc, amount, date, rocYear, options={}){
   const d=desc.replace(/[\r\n]+/g," ").replace(/\s+/g," ").trim();
   const houseName=d.split("-")[0].trim();
-  const houseMatch=matchHousing(houseName);
+  // 先嘗試含房號的比對（例如「內湖737-5」）
+  const houseNameWithNum=d.split("-").slice(0,2).join("-").trim();
+  const houseMatch=matchHousing(houseNameWithNum)||matchHousing(houseName);
   const code=houseMatch?houseMatch.code:houseName;
   const lines=[];
 
@@ -1897,7 +1899,7 @@ document.getElementById("fang-btn-cashflow").addEventListener("click",()=>{
     if(!m) return;
     const banks=Array.isArray(item.bank)?item.bank:[item.bank];
     // 物件名稱 = 房源名稱 + 房號（remainder）
-    const objName=m.remainder?`${m.matchedName}-${m.remainder}`:m.matchedName;
+    const objName=m.remainder?`${m.matchedName}-${m.remainder.replace(/^-+/,"")}`:m.matchedName;
     const summary=`${objName}-${s.rocYear+pad2(s.rocMonth)}租金-${s.tenant}`;
     banks.forEach(b=>{
       const idx=bankIndexMap.get(b);
@@ -2551,9 +2553,39 @@ function parseReqXlsx(data){
 
     // 說明欄組成
     let desc=note;
-    if(isBizLabor){
+    if(reqType==="業務勞報"&&note.includes("中人費")){
+      // 業務勞報含中人費 → 戶名-顧問服務
+      desc=`${accountName}-顧問服務`;
+    }else if(isBizLabor){
+      // 業務勞報無地址 → 戶名-租賃服務
       desc=`${accountName}-租賃服務`;
+    }else if(reqType==="社宅業務"){
+      // 社宅業務 → 全居公證費-地址-大名代
+      const lastDash=note.lastIndexOf("-");
+      const addr=lastDash>0?note.slice(0,lastDash).trim():note;
+      const nameInNote=lastDash>0?note.slice(lastDash+1).trim():"";
+      const staffName=nameInNote||accountName;
+      desc=`全居公證費-${addr}-${staffName}代`;
+    }else if(reqType==="全居代管"){
+      // 全居代管：判斷是否有區間數字格式（11XXXXX-XXXX）
+      const intervalMatch=note.match(/(11\d{4,5}[-–]\d{4})/);
+      if(intervalMatch){
+        // 有區間 → 房源-費用名稱-區間
+        const interval=intervalMatch[1];
+        // 費用名稱：電費/水費/網路費等
+        const FEE_NAMES=["電費","水費","網路費","瓦斯費","管理費","電信費","凱擘","中嘉","第四台"];
+        const feeName=FEE_NAMES.find(f=>note.includes(f))||"費用";
+        // 房源：從備註第一個-之前
+        const houseName=note.split("-")[0].trim().split(" ")[0].trim();
+        desc=`${houseName}-${feeName}-${interval}`;
+      }else if(isStaffAdvance(receiver)){
+        // 無區間且同仁代墊 → 備註-大名代
+        const staffName=extractStaffName(receiver);
+        desc=`${note}-${staffName}代`;
+      }
+      // 無區間且非同仁 → 直接複製備註（desc=note 不變）
     }else if(isStaffAdvance(receiver)){
+      // 其他同仁代墊
       const staffName=extractStaffName(receiver);
       desc=`${note}-${staffName}代`;
     }

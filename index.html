@@ -1456,7 +1456,8 @@ function buildVoucherFromCashflowDesc(desc, amount, date, rocYear, options={}){
     const itemRegex=/([^($、，,()（）\s][^($、，（）]*?)\s*\(\$?([\d,]+)\)/g;
     let m;
     while((m=itemRegex.exec(d))!==null){
-      const itemName=m[1].replace(/合拆[:：]?\s*/,"").trim();
+      // 清理名稱：去掉「合拆」、括號、冒號
+      const itemName=m[1].replace(/合拆[:：]?\s*/,"").replace(/^[)）\s]+/,"").trim();
       const itemAmt=parseInt(m[2].replace(/,/g,""));
       if(itemName&&itemAmt>0){
         const hm=matchHousing(itemName.split("-")[0].trim());

@@ -2712,7 +2712,12 @@ function parseRefundXlsx(data){
       }
     }
 
-    return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee:0,
+    // 匯費判斷：彙整銀行名稱含「國泰」或彙整銀行代號含「013」→ 0，其餘 15
+    const bankName=String(r[45]||"").trim();
+    const bankCode=String(r[48]||"").trim();
+    const transferFee=(bankName.includes("國泰")||bankCode.includes("013"))?0:15;
+
+    return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee,
       dept:String(r[22]||"").trim(),  // 退款部門 col 22
       raw:r};
   }).filter(r=>r.amount>0);

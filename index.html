@@ -1888,7 +1888,7 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
   }
 
   // 9欄格式（符合系統匯入範本）
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
 
   // ── 合併分兩筆的項目 ──
@@ -1948,8 +1948,8 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
         rows.push([rocYear,"DEFAULT",3,row.dateStr,
           line.acctCode||"",line.custCode||"",line.dc,
           line.amount!=null?line.amount:"",
-          line.deptNo||"",
-          line.summary||""]);
+          line.summary||"",
+          line.deptNo||""]);
       });
     });
     const ws=XLSX.utils.aoa_to_sheet(rows);
@@ -2207,7 +2207,7 @@ function updateBizButtons(){
    業務處 產出
 ══════════════════════════════════════ */
 document.getElementById("biz-btn-voucher").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
   bizState.matched.forEach(item=>{
     const s=item.source;
@@ -2297,6 +2297,7 @@ function parseExpenseCashflowXlsx(data){
     const iOrderNo=headers.findIndex(h=>h==="單號");
     const iExpense=headers.findIndex(h=>h==="支出");
     const iFee=headers.findIndex(h=>h==="匯費");
+    const iDeptNo=headers.findIndex(h=>h==="部門編號");
 
     // 找日期欄（col 0）
     const iDate=0;
@@ -2316,10 +2317,11 @@ function parseExpenseCashflowXlsx(data){
       const orderNo=iOrderNo>=0&&r[iOrderNo]?String(r[iOrderNo]).trim():"";
       const expense=iExpense>=0&&r[iExpense]?Number(r[iExpense]):null;
       const fee=iFee>=0&&r[iFee]?Number(r[iFee]):0;
+      const deptNo=iDeptNo>=0&&r[iDeptNo]?String(r[iDeptNo]).trim():"";
       if(!expense||isNaN(expense)||expense<=0) return;
       const finalDesc=desc||orderNo||"（無說明）";
       allRows.push({desc:finalDesc, orderNo, expense, fee:isNaN(fee)?0:fee,
-        sheet:sheetName, rocDateStr:currentDate});
+        sheet:sheetName, rocDateStr:currentDate, deptNo});
     });
   });
 
@@ -2501,7 +2503,7 @@ function parseOwnerRentDesc(desc){
 }
 
 document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
 
   // 分組：屋主租金 vs 業務勞報 vs 一般支出
@@ -2576,7 +2578,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0);
     const summary=main.row.desc;
     // 借方：5990-031 加總
-    rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"5990-031","",1,totalAmt,summary]);
+    rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"5990-031","",1,totalAmt,summary,""])
     // 貸方：各自分開
     rows.push([115,"DEFAULT",3,main.row.rocDateStr||TODAY_ROC,"1110-01","",2,main.row.expense,main.row.desc]);
     if(withhold) rows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01","",2,withhold.row.expense,withhold.row.desc]);
@@ -2587,7 +2589,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     const vLines=buildExpenseVoucherLines(row);
     vLines.forEach(line=>{
       rows.push([115,"DEFAULT",3,row.rocDateStr||TODAY_ROC,
-        line.acctCode,line.custCode,line.dc,line.amount,line.summary]);
+        line.acctCode,line.custCode,line.dc,line.amount,line.summary,row.deptNo||""]);
     });
   });
 
@@ -2692,8 +2694,16 @@ function parseReqXlsx(data){
     const noFee=isKGIBank(bank)||NO_FEE_KEYWORDS.some(k=>note.includes(k));
     const transferFee=noFee?0:15;
 
+    // 費用所屬部門 → 部門編號
+    const DEPT_MAP=[['短租','001'],['房管','002'],['業務','003'],['工程','004'],['營運','005']];
+    const costDept=String(r[20]||"").trim();
+    const needsDept=["公司帳務","全居包租"].includes(reqType);
+    const deptNo=needsDept
+      ?(DEPT_MAP.find(([k])=>costDept.includes(k))||["",""])[1]
+      :"";
+
     return{source:"請款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee,
-      reqType,accountName,isBizLabor,
+      reqType,accountName,isBizLabor,deptNo,
       receiver:String(r[3]||"").trim(),
       raw:r};
   }).filter(r=>r.amount>0);
@@ -2736,9 +2746,13 @@ function parseRefundXlsx(data){
     const bankCode=String(r[48]||"").trim();
     const transferFee=(bankName.includes("國泰")||bankCode.includes("013"))?0:15;
 
+    const dept=String(r[22]||"").trim();
+    // 退款部門對應部門編號
+    const DEPT_MAP=[['短租','001'],['房管','002'],['業務','003'],['工程','004'],['營運','005']];
+    const deptNo=(DEPT_MAP.find(([k])=>dept.includes(k))||["",""])[1];
+
     return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee,
-      dept:String(r[22]||"").trim(),  // 退款部門 col 22
-      raw:r};
+      dept,deptNo,raw:r};
   }).filter(r=>r.amount>0);
 }
 
@@ -2870,18 +2884,15 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     if(!sheetGroups[sheetName]||!sheetGroups[sheetName].length) return;
     const rows=sheetGroups[sheetName];
 
-    // 請款單：依收款人分組，同收款人匯費只收一次
     const aoa=[];
-    aoa.push(["日期","說明","單號","收入","支出","匯費","餘額"]);
+    aoa.push(["日期","說明","單號","收入","支出","匯費","餘額","部門編號"]);
 
     if(sheetName.startsWith("退款單-")){
-      // 退款單各部門頁：直接列出，匯費從 row.transferFee 取
       rows.forEach(row=>{
         const fee=row.transferFee>0?row.transferFee:null;
-        aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null]);
+        aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null,row.deptNo||""]);
       });
     } else {
-      // 依收款人分組
       const receiverGroups={};
       const receiverOrder=[];
       rows.forEach(row=>{
@@ -2895,15 +2906,14 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
       receiverOrder.forEach(receiver=>{
         const group=receiverGroups[receiver];
         group.forEach((row,idx)=>{
-          // 匯費只在同收款人第一筆顯示
           const fee=idx===0&&row.transferFee>0?row.transferFee:null;
-          aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null]);
+          aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null,row.deptNo||""]);
         });
       });
     }
 
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:10},{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:12}];
+    ws["!cols"]=[{wch:10},{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:12},{wch:10}];
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
   });
 
@@ -3148,7 +3158,7 @@ document.getElementById("fang-3rd-btn-reset").addEventListener("click",()=>{
 });
 
 document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
 
   fang3rdState.results.forEach(item=>{
@@ -3460,7 +3470,7 @@ document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
 
 // 下載傳票匯入檔
 document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
 
   bizInvState.matched.forEach(item=>{
@@ -3622,7 +3632,7 @@ document.getElementById("fang-inv-reset").addEventListener("click",()=>{
 });
 
 document.getElementById("fang-inv-download").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
   fangInvState.invoices.forEach(inv=>{
     const s1=`${inv.caseName}-${inv.yearMonth}-${inv.type}`;
@@ -3688,7 +3698,7 @@ function invoiceAcctCode(type){
 
 // 產出電子發票傳票（9欄）
 function buildInvoiceVoucherRows(invoices){
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","部門編號","長摘要"];
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
   invoices.forEach(inv=>{
     const houseMatch=matchHousing(inv.caseName);

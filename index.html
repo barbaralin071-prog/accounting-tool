@@ -536,7 +536,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         </div>
         <div class="errbox" id="fang-3rd-err"></div>
         <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-          <button class="btn primary" id="fang-3rd-btn-match" disabled>開始比對</button>
+          <button class="btn primary" id="fang-3rd-btn-download-top" disabled>下載沖帳傳票匯入檔</button>
         </div>
       </div>
 
@@ -1362,9 +1362,13 @@ function readFile(file){
 
 function showErr(id,msg){
   const el=document.getElementById(id);
+  if(!el) return;
   el.textContent=msg; el.style.display="block";
 }
-function clearErr(id){document.getElementById(id).style.display="none";}
+function clearErr(id){
+  const el=document.getElementById(id);
+  if(el) el.style.display="none";
+}
 
 /* ══════════════════════════════════════
    解析正本金流表
@@ -2974,41 +2978,53 @@ function parseCashflowForThird(data){
   const wb=XLSX.read(data,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-  const rows=[];
+  const rows=[];         // 屋主支出列（主軸）
+  const incomeRows=[];   // 收入列
+  const expenseOther=[]; // 非屋主支出列
   let currentDate="";
+
   for(const r of aoa){
-    const dateCell=r[0]?String(r[0]).replace(/\s*★\s*/g,"").trim():"";
-    if(dateCell&&/\d+月\d+日/.test(dateCell)) currentDate=dateCell;
+    // 日期沿用邏輯（支援多種格式）
+    if(r[0]!=null){
+      try{
+        const roc=toRoc(r[0]);
+        currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+      }catch(e){
+        const dateStr=String(r[0]).replace(/\s*★\s*/g,"").trim();
+        if(/\d+月\d+日/.test(dateStr)){
+          currentDate=dateStr;
+        }
+      }
+    }
+
     const desc=r[1]?String(r[1]).replace(/[\r\n]+/g," ").trim():"";
+    const income=r[3]?Number(r[3]):null;
     const expense=r[4]?Number(r[4]):null;
-    if(!desc||!expense||isNaN(expense)||expense<=0) continue;
-    if(desc==="說明") continue;
-    if(!desc.includes("屋主")||!desc.includes("租金")) continue;
+    if(!desc||desc==="說明") continue;
 
-    // 從說明抓所有房源名稱（以「、」或「，」分隔的前段）
-    // 例如「永吉278居所、大安19居所-11506租金-屋主黃華郁」
-    // → 取第一個「-」之前的部分，再用「、」「，」分隔
-    const beforeDash=desc.split("-")[0];
-    const houseNames=beforeDash.split(/[、，,]/).map(s=>s.trim()).filter(Boolean);
+    // 收入列
+    if(income&&!isNaN(income)&&income>0){
+      incomeRows.push({date:currentDate, desc, amount:income});
+    }
 
-    const houses=houseNames.map(hn=>{
-      const houseMatch=matchHousing(hn);
-      return{
-        houseName:hn,
-        houseMatch,
-        code:houseMatch?houseMatch.code:hn,
-      };
-    });
-
-    rows.push({
-      date:currentDate,
-      desc,
-      expense,
-      transferFee:Number(r[5])||0, // 匯費 col 5
-      houses,
-    });
+    // 支出列
+    if(expense&&!isNaN(expense)&&expense>0){
+      if(desc.includes("屋主")&&desc.includes("租金")){
+        // 屋主支出列（主軸）
+        const beforeDash=desc.split("-")[0];
+        const houseNames=beforeDash.split(/[、，,]/).map(s=>s.trim()).filter(Boolean);
+        const houses=houseNames.map(hn=>{
+          const houseMatch=matchHousing(hn);
+          return{houseName:hn, houseMatch, code:houseMatch?houseMatch.code:hn};
+        });
+        rows.push({date:currentDate, desc, expense, transferFee:Number(r[5])||0, houses});
+      }else{
+        // 非屋主支出（代墊款等）
+        expenseOther.push({date:currentDate, desc, expense});
+      }
+    }
   }
-  return rows;
+  return{rows, incomeRows, expenseOther};
 }
 
 let fang3rdState={
@@ -3020,7 +3036,12 @@ let fang3rdState={
   bindDropzone(`fang-3rd-dz-${key}`,`fang-3rd-file-${key}`,async(file,dz)=>{
     try{
       const data=await readFile(file);
-      if(key==="cashflow") fang3rdState.cashflow=parseCashflowForThird(data);
+      if(key==="cashflow"){
+        const parsed=parseCashflowForThird(data);
+        fang3rdState.cashflow=parsed.rows;
+        fang3rdState.cashflow_income=parsed.incomeRows;
+        fang3rdState.cashflow_expense_other=parsed.expenseOther;
+      }
       else if(key==="invoice") fang3rdState.invoice=parseFangInvoiceXlsx(data);
       dz.classList.add("loaded");
       dz.querySelector(".dz-label").textContent="✓ "+file.name;
@@ -3074,56 +3095,24 @@ document.getElementById("fang-3rd-file-expense").addEventListener("change",async
 });
 
 function updateFang3rdMatchBtn(){
-  document.getElementById("fang-3rd-btn-match").disabled=
-    !(fang3rdState.cashflow&&fang3rdState.income);
+  const hasCashflow=fang3rdState.cashflow!=null;
+  const hasInvoice=fang3rdState.invoice!=null&&fang3rdState.invoice.length>0;
+  const canDownload=hasCashflow&&hasInvoice;
+  console.log(`updateFang3rdMatchBtn: cashflow=${hasCashflow} invoice=${hasInvoice} canDownload=${canDownload}`);
+  document.getElementById("fang-3rd-btn-download").disabled=!canDownload;
+  const topBtn=document.getElementById("fang-3rd-btn-download-top");
+  if(topBtn) topBtn.disabled=!canDownload;
 }
 
-document.getElementById("fang-3rd-btn-match").addEventListener("click",()=>{
-  clearErr("fang-3rd-err");
-  const results=[];
-
-  fang3rdState.cashflow.forEach(cfRow=>{
-    // 從說明抓年月（5位數字，例如11506）
-    const ymMatch=cfRow.desc.match(/(\d{5})/);
-    const yearMonth=ymMatch?ymMatch[1]:"";
-
-    // 每個房源各自比對
-    const houseResults=cfRow.houses.map(h=>{
-      const{houseName,code}=h;
-
-      // 雙重比對：客供商代號 OR 摘要包含房源名稱，同時比對年月
-      const matchLine=(r,dc)=>{
-        const codeMatch=code&&r.custCode===code;
-        const nameMatch=r.summary.includes(houseName);
-        const ymOk=!yearMonth||r.summary.includes(yearMonth);
-        return r.dc===dc&&(codeMatch||nameMatch)&&ymOk;
-      };
-
-      // 收入傳票：找同房源的貸方（dc=2），排除 1110-01（借方科目）
-      const incomeLines=(fang3rdState.income||[]).filter(r=>
-        matchLine(r,2)&&r.acctCode!=="1110-01");
-      // 支出傳票：找同房源的借方（dc=1），排除屋主撥款那筆
-      const expenseLines=(fang3rdState.expense||[]).filter(r=>
-        matchLine(r,1)&&!r.summary.includes("屋主")&&r.acctCode!=="1110-01");
-
-      const invoices=(fang3rdState.invoice||[]).filter(inv=>{
-        const m=matchHousing(inv.caseName);
-        const codeMatch=m&&m.code===code;
-        const nameMatch=inv.caseName.includes(houseName)||
-          houseName.includes(inv.caseName);
-        const ymOk=!yearMonth||inv.yearMonth===yearMonth;
-        return (codeMatch||nameMatch)&&ymOk;
-      });
-
-      return{houseName, code, incomeLines, expenseLines, invoices};
-    });
-
-    results.push({cfRow:{...cfRow,yearMonth}, houseResults});
+// 上方下載按鈕觸發同樣的下載
+const fang3rdTopBtn=document.getElementById("fang-3rd-btn-download-top");
+if(fang3rdTopBtn){
+  fang3rdTopBtn.addEventListener("click",()=>{
+    document.getElementById("fang-3rd-btn-download").click();
   });
+}
 
-  fang3rdState.results=results;
-  renderFang3rdResult();
-});
+;
 
 function renderFang3rdResult(){
   document.getElementById("fang-3rd-result").hidden=false;
@@ -3159,7 +3148,6 @@ function renderFang3rdResult(){
   const summaryText=`共 ${rowNum} 個房源，${total} 個可產出傳票`;
   document.getElementById("fang-3rd-bal").textContent=summaryText;
   document.getElementById("fang-3rd-summary-line").textContent=summaryText;
-  document.getElementById("fang-3rd-btn-download").disabled=total===0;
 }
 
 document.getElementById("fang-3rd-btn-reset").addEventListener("click",()=>{
@@ -3174,7 +3162,6 @@ document.getElementById("fang-3rd-btn-reset").addEventListener("click",()=>{
     if(fi) fi.value="";
   });
   document.getElementById("fang-3rd-result").hidden=true;
-  document.getElementById("fang-3rd-btn-match").disabled=true;
   document.getElementById("fang-3rd-btn-download").disabled=true;
   document.getElementById("fang-3rd-bal").textContent="—";
   clearErr("fang-3rd-err");
@@ -3183,70 +3170,137 @@ document.getElementById("fang-3rd-btn-reset").addEventListener("click",()=>{
 document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號"];
   const rows=[HEADERS];
+  const rocYear=115;
 
-  fang3rdState.results.forEach(item=>{
-    const{cfRow,houseResults}=item;
-    const rocYear=115;
+  const useMethodA=!(fang3rdState.income&&fang3rdState.expense);
+  const invoices=fang3rdState.invoice||[];
+  const cfRows=fang3rdState.cashflow||[];          // 屋主支出列
+  const incomeRows=fang3rdState.cashflow_income||[]; // 金流表收入列
+  const expOther=fang3rdState.cashflow_expense_other||[]; // 金流表非屋主支出
 
-    // 每個房源的 Step1+2+3
-    houseResults.forEach(h=>{
-      if(!h.incomeLines.length) return;
+  // 以電子發票的房源+年月為主軸，分組
+  const invGroups=new Map();
+  invoices.forEach(inv=>{
+    const key=`${inv.custCode||inv.caseName}|${inv.yearMonth}`;
+    if(!invGroups.has(key)) invGroups.set(key,{inv:null,invList:[],code:inv.custCode,caseName:inv.caseName,ym:inv.yearMonth});
+    invGroups.get(key).invList.push(inv);
+  });
 
-      // Step1：收入傳票貸方→反轉為借方
-      h.incomeLines.forEach(line=>{
-        rows.push([rocYear,"DEFAULT",3,line.date||cfRow.date,
-          line.acctCode,line.custCode,1,line.amount,line.summary]);
-      });
+  invGroups.forEach(({invList,code,caseName,ym})=>{
+    const groupStart=rows.length; // 記錄此房源分錄起始位置
 
-      // Step2：支出傳票借方→反轉為貸方
-      h.expenseLines.forEach(line=>{
-        rows.push([rocYear,"DEFAULT",3,line.date||cfRow.date,
-          line.acctCode,line.custCode,2,line.amount,line.summary]);
-      });
+    // 房源關鍵字（去掉「居所」後綴）
+    const houseKey=caseName.replace(/居所.*$/,"").replace(/[-\s]/g,"").trim();
 
-      // Step3：電子發票
-      h.invoices.forEach(inv=>{
-        const s1=`${inv.caseName}-${inv.yearMonth}-${inv.type}`;
-        const s2=`${inv.caseName}-${inv.yearMonth}-${inv.type}-${inv.invoiceNo}`;
-        rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,
-          fangInvoiceAcctCode(inv.type),inv.custCode,2,inv.untaxed,s1]);
-        rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,
-          "2290",inv.custCode,2,inv.tax,s2]);
-      });
+    // 找對應的屋主支出列
+    const cfRow=cfRows.find(r=>{
+      const descClean=r.desc.replace(/[\s]/g,"");
+      const nameMatch=r.houses.some(h=>
+        h.houseName===caseName||
+        caseName.includes(h.houseName)||
+        h.houseName.includes(caseName)||
+        (houseKey.length>=2&&(descClean.includes(houseKey)||r.desc.includes(houseKey))));
+      const ymMatch=!ym||r.desc.includes(ym);
+      return nameMatch&&ymMatch;
     });
 
-    // Step4：最後一列，整列金流表支出＋匯費（所有房源共用一列）
-    const hasAny=houseResults.some(h=>h.incomeLines.length>0);
-    if(hasAny){
+    if(useMethodA){
+      console.log(`=== 方案A caseName:${caseName} ym:${ym} houseKey:${houseKey} ===`);
+      console.log(`收入列:${incomeRows.length} 屋主支出:${cfRows.length} cfRow:${cfRow?.desc||'找不到'}`);
+      // Step1：金流表收入欄（同房源+同年月）→ 反轉借方
+      const relIncome=incomeRows.filter(r=>{
+        const descClean=r.desc.replace(/[\s]/g,"");
+        const nameMatch=houseKey.length>=2&&(
+          descClean.includes(houseKey)||
+          r.desc.includes(caseName)||
+          (code&&matchHousing(r.desc.split("-")[0].trim())?.code===code));
+        const ymMatch=!ym||r.desc.includes(ym);
+        return nameMatch&&ymMatch;
+      });
+
+      relIncome.forEach(r=>{
+        console.log(`  收入比對到: ${r.desc} 金額:${r.amount}`);
+        const d=r.desc;
+        let acct="2205-02";
+        if(d.includes("代管費")||d.includes("月代管")) acct="2205-01";
+        else if(d.includes("押金")) acct="2205-03";
+        else if(d.includes("服務費")) acct="2205-01";
+        rows.push([rocYear,"DEFAULT",3,r.date||TODAY_ROC,acct,code,1,r.amount,d,""]);
+      });
+
+      // Step3：金流表非屋主支出（同房源+同年月）→ 131450-01 貸2
+      const relExp=expOther.filter(r=>{
+        const descClean=r.desc.replace(/[\s]/g,"");
+        const nameMatch=houseKey.length>=2&&(
+          descClean.includes(houseKey)||
+          r.desc.includes(caseName)||
+          (code&&matchHousing(r.desc.split("-")[0].trim())?.code===code));
+        const ymMatch=!ym||r.desc.includes(ym);
+        return nameMatch&&ymMatch;
+      });
+      relExp.forEach(r=>{
+        rows.push([rocYear,"DEFAULT",3,r.date||TODAY_ROC,"131450-01",code,2,r.expense,r.desc,""]);
+      });
+
+      // 借貸平衡檢查
+
+
+    }else{
+      // 原本邏輯：傳票反轉
+      const matchLine=(r,dc)=>{
+        const codeMatch=code&&r.custCode===code;
+        const nameMatch=r.summary.includes(caseName);
+        const ymOk=!ym||r.summary.includes(ym);
+        return r.dc===dc&&(codeMatch||nameMatch)&&ymOk;
+      };
+      const incomeLines=(fang3rdState.income||[]).filter(r=>matchLine(r,2)&&r.acctCode!=="1110-01");
+      const expenseLines=(fang3rdState.expense||[]).filter(r=>matchLine(r,1)&&!r.summary.includes("屋主")&&r.acctCode!=="1110-01");
+      incomeLines.forEach(line=>{
+        rows.push([rocYear,"DEFAULT",3,line.date||TODAY_ROC,line.acctCode,line.custCode,1,line.amount,line.summary,""]);
+      });
+      expenseLines.forEach(line=>{
+        rows.push([rocYear,"DEFAULT",3,line.date||TODAY_ROC,line.acctCode,line.custCode,2,line.amount,line.summary,""]);
+      });
+    }
+
+    // Step2：電子發票 → 貸方
+    invList.forEach(inv=>{
+      const s1=`${inv.caseName}-${inv.yearMonth}-${fangInvoiceTypeName(inv.type)}`;
+      const s2=`${s1}-${inv.invoiceNo}`;
+      const invDept=inv.type==="代管費"?"002":""; // 4101-02 → 部門002
+      rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,fangInvoiceAcctCode(inv.type),inv.custCode,2,inv.untaxed,s1,invDept]);
+      rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,"2290",inv.custCode,2,inv.tax,s2,""]);
+    });
+
+    // Step4：金流表屋主支出 → 最後一列
+    console.log(`cfRow: ${cfRow?cfRow.desc:'找不到'}`);
+    if(cfRow){
       const totalAmt=cfRow.expense+(cfRow.transferFee||0);
-      const firstHouse=cfRow.houses[0];
-      const lastRowCode=firstHouse?firstHouse.code:"";
-      // 若有匯費，加一列 6270
+      const lastRowCode=cfRow.houses[0]?.code||code;
+      const dateStr=cfRow.date||TODAY_ROC;
       if(cfRow.transferFee>0){
-        rows.push([rocYear,"DEFAULT",3,cfRow.date,
-          "6270","",1,cfRow.transferFee,"匯款手續費"]);
+        rows.push([rocYear,"DEFAULT",3,dateStr,"6270","",1,cfRow.transferFee,"匯款手續費","002"]);
       }
-      rows.push([rocYear,"DEFAULT",3,cfRow.date,
-        "1110-01",lastRowCode,2,totalAmt,cfRow.desc]);
+      rows.push([rocYear,"DEFAULT",3,dateStr,"1110-01",lastRowCode,2,totalAmt,cfRow.desc,""]);
+    }
+
+    // 借貸平衡檢查
+    const groupRows=rows.slice(groupStart);
+    const debit=groupRows.filter(r=>r[6]===1).reduce((s,r)=>s+(Number(r[7])||0),0);
+    const credit=groupRows.filter(r=>r[6]===2).reduce((s,r)=>s+(Number(r[7])||0),0);
+    if(Math.abs(debit-credit)>1){
+      rows.push([rocYear,"DEFAULT",3,TODAY_ROC,"⚠","",0,0,
+        `【借貸不平衡】${caseName}-${ym} 借方${debit}≠貸方${credit} 差額${debit-credit}`,""]);
     }
   });
 
-  // 按日期分組產出多個Excel
-  const dateGrouped=new Map();
-  rows.slice(1).forEach(row=>{
-    const d=row[3]||TODAY_ROC;
-    if(!dateGrouped.has(d)) dateGrouped.set(d,[]);
-    dateGrouped.get(d).push(row);
-  });
-
-  dateGrouped.forEach((dateRows,dateStr)=>{
-    const ws=XLSX.utils.aoa_to_sheet([rows[0],...dateRows]);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50}];
-    const wb_out=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
-    const fileDate=dateStr.replace(/\//g,"-");
-    XLSX.writeFile(wb_out,`出款屋主_傳票匯入_${fileDate}.xlsx`);
-  });
+  // 產出單一 Excel 檔案
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10}];
+  const wb_out=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
+  const today=TODAY_ROC.replace(/\//g,"-");
+  XLSX.writeFile(wb_out,`出款屋主_傳票匯入_${today}.xlsx`);
 });
 
 /* ══════════════════════════════════════
@@ -3533,47 +3587,68 @@ function parseFangInvoiceXlsx(data){
   const hi=aoa.findIndex(r=>r&&r.some(c=>c==="發票號碼"));
   if(hi===-1)throw new Error("找不到「發票號碼」欄位");
   const headers=aoa[hi];
-  // 用欄位名稱找 index
   const colMap={};
   headers.forEach((h,i)=>{ if(h&&!colMap[h]) colMap[h]=i; });
-  // 「營業稅」有兩欄，取後面那個（小計未稅旁邊的那個）
-  const taxCols=headers.reduce((a,h,i)=>h==="營業稅"?[...a,i]:a,[]);
-  const taxCol=taxCols.length>=2?taxCols[taxCols.length-1]:taxCols[0];
   const col=n=>colMap[n]??-1;
 
-  return aoa.slice(hi+1).filter(r=>r[col("發票號碼")]!=null).map(r=>{
-    const note=r[col("發票備註")]?String(r[col("發票備註")]).trim():"";
-    const brandName=r[col("發票品名(首欄)")]?String(r[col("發票品名(首欄)")]).trim():"";
-    const invoiceNo=String(r[col("發票號碼")]||"").trim();
-    const untaxed=Math.round(Number(r[col("小計（未稅）")])||0);
-    const tax=Math.round(Number(r[taxCol])||0);
-    const total=Number(r[col("總金額")])||0;
+  // 判斷格式：房管處自己的系統（有「發票備註」「小計（未稅）」「發票品名」）
+  // vs Ragic格式（有「合約案件名稱」「發票備註」）
+  const isSimpleFormat=col("小計（未稅）")>=0&&col("發票品名")>=0&&col("合約案件名稱")<0;
 
-    // 案件名稱：優先欄位，空白時從備註判斷
-    let caseName=r[col("合約案件名稱")]?String(r[col("合約案件名稱")]).trim():"";
-    if(!caseName&&note){
-      const parts=note.split("/").map(s=>s.trim()).filter(Boolean);
-      for(const p of parts){
-        const isNum=/^\d+$/.test(p.replace(/,/g,""));
-        const isYM=/^\d{4,5}$/.test(p);
-        const isCompany=p.includes("有限公司")||p.includes("股份有限公司");
-        if(!isNum&&!isYM&&!isCompany&&p.length>=2){
-          caseName=p.includes(".")?p.split(".")[0].trim():p;
-          break;
+  return aoa.slice(hi+1).filter(r=>r[col("發票號碼")]!=null).map(r=>{
+    const invoiceNo=String(r[col("發票號碼")]||"").trim();
+    const note=r[col(isSimpleFormat?"發票備註":"發票備註")]?String(r[col("發票備註")]).trim():"";
+    const brandName=r[col(isSimpleFormat?"發票品名":"發票品名(首欄)")]?
+      String(r[col(isSimpleFormat?"發票品名":"發票品名(首欄)")]).trim():"";
+
+    let untaxed,tax,caseName,yearMonth;
+
+    if(isSimpleFormat){
+      // 房管處格式：col 8=未稅, col 9=稅
+      untaxed=Math.round(Number(r[col("小計（未稅）")])||0);
+      tax=Math.round(Number(r[col("營業稅")])||0);
+
+      // 備註格式：「11506 / 雙十居所代管費 / 3095 / 155」或「雙十居所/346/17」
+      const parts=note.split(/\s*\/\s*/).map(s=>s.trim()).filter(Boolean);
+      // 找年月（5位數字）
+      const ymPart=parts.find(p=>/^\d{5}$/.test(p));
+      yearMonth=ymPart||"";
+      // 找房源名稱（非數字、非年月的部分）
+      const namePart=parts.find(p=>!/^\d+$/.test(p)&&p!==ymPart);
+      // 去掉費用名稱（代管費/修繕費等）
+      caseName=namePart?namePart.replace(/代管費|修繕費|系統費|服務費/g,"").trim():"";
+      if(!caseName&&brandName) caseName=brandName;
+
+    }else{
+      // Ragic格式
+      const taxCols=headers.reduce((a,h,i)=>h==="營業稅"?[...a,i]:a,[]);
+      const taxCol=taxCols.length>=2?taxCols[taxCols.length-1]:taxCols[0];
+      untaxed=Math.round(Number(r[col("小計（未稅）")])||0);
+      tax=Math.round(Number(r[taxCol])||0);
+
+      caseName=r[col("合約案件名稱")]?String(r[col("合約案件名稱")]).trim():"";
+      if(!caseName&&note){
+        const noteParts=note.split("/").map(s=>s.trim()).filter(Boolean);
+        for(const p of noteParts){
+          const isNum=/^\d+$/.test(p.replace(/,/g,""));
+          const isYM=/^\d{4,5}$/.test(p);
+          const isCo=p.includes("有限公司")||p.includes("股份有限公司");
+          if(!isNum&&!isYM&&!isCo&&p.length>=2){
+            caseName=p.includes(".")?p.split(".")[0].trim():p;
+            break;
+          }
         }
       }
+      const ymMatch=note.match(/(\d{5})/);
+      yearMonth=ymMatch?ymMatch[1]:"";
     }
 
     // 判斷類型
     let type="服務費";
     if(brandName.includes("修繕費")||note.includes("修繕費")) type="修繕費";
     else if(brandName.includes("代管費")||note.includes("代管費")) type="代管費";
-    else if(note.includes("系統服務費")||note.includes("系統管理費")) type="系統服務費";
+    else if(note.includes("系統服務費")||note.includes("系統管理費")||brandName.includes("系統")) type="系統服務費";
     else if(note.includes("系統費")) type="系統服務費";
-
-    // 年月
-    const ymMatch=note.match(/(\d{5})/);
-    const yearMonth=ymMatch?ymMatch[1]:"";
 
     // 日期
     let rocDateStr="";
@@ -3584,10 +3659,11 @@ function parseFangInvoiceXlsx(data){
     const houseMatch=matchHousing(caseName);
     const custCode=houseMatch?houseMatch.code:"";
 
-    return{invoiceNo, caseName, yearMonth, rocDateStr, rocYear, custCode, type,
-      untaxed, tax, total};
+    return{invoiceNo,caseName,yearMonth,rocDateStr,rocYear,custCode,type,untaxed,tax,
+      total:Number(r[col("總金額")])||0};
   });
 }
+
 
 function fangInvoiceAcctCode(type){
   if(type==="代管費") return "4101-02";
@@ -3603,7 +3679,7 @@ function fangInvoiceTypeName(type){
 
 let fangInvState={invoices:[]};
 
-bindDropzone("fang-inv-dz","fang-inv-file",async(file,dz)=>{
+bindDropzone("fang-3rd-dz-invoice","fang-3rd-file-invoice",async(file,dz)=>{
   try{
     const data=await readFile(file);
     fangInvState.invoices=parseFangInvoiceXlsx(data);
@@ -3641,7 +3717,8 @@ function renderFangInvPreview(){
     `共 ${invs.length} 張｜未稅 ${fmtMoney(tUntax)}｜稅額 ${fmtMoney(tTax)}｜含稅 ${fmtMoney(tTotal)}`;
 }
 
-document.getElementById("fang-inv-reset").addEventListener("click",()=>{
+const _fangInvResetBtn=document.getElementById("fang-inv-reset");
+if(_fangInvResetBtn) _fangInvResetBtn.addEventListener("click",()=>{
   fangInvState={invoices:[]};
   const dz=document.getElementById("fang-inv-dz");
   dz.classList.remove("loaded");

@@ -3373,12 +3373,21 @@ function parseBizCashflowXlsx(data){
   const ws=wb.Sheets[sheetName];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const rows=[];
-  let currentDate="";
+  let currentDate=TODAY_ROC;
   for(const r of aoa){
-    const dateCell=r[0]?String(r[0]).trim():"";
-    if(dateCell&&/\d+月\d+日/.test(dateCell)) currentDate=dateCell;
-    else if(r[0] instanceof Date){
-      try{const roc=toRoc(r[0]);currentDate=roc.month+"月"+roc.day+"日";}catch(e){}
+    // 日期欄位解析，轉成民國格式 115/06/01
+    if(r[0]!=null){
+      try{
+        const roc=toRoc(r[0]);
+        currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+      }catch(e){
+        const s=String(r[0]).trim();
+        const mMatch=s.match(/^(\d+)月(\d+)日$/);
+        if(mMatch){
+          const yr=currentDate?parseInt(currentDate.split("/")[0]):115;
+          currentDate=`${yr}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
+        }
+      }
     }
     const desc=r[1]?String(r[1]).replace(/[\r\n]+/g," ").trim():"";
     const income=r[3]?Number(r[3]):null;

@@ -3228,19 +3228,55 @@ document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
         rows.push([rocYear,"DEFAULT",3,r.date||TODAY_ROC,acct,code,1,r.amount,d,""]);
       });
 
-      // Step3：金流表非屋主支出（同房源+同年月）→ 131450-01 貸2
-      const relExp=expOther.filter(r=>{
-        const descClean=r.desc.replace(/[\s]/g,"");
-        const nameMatch=houseKey.length>=2&&(
-          descClean.includes(houseKey)||
-          r.desc.includes(caseName)||
-          (code&&matchHousing(r.desc.split("-")[0].trim())?.code===code));
-        const ymMatch=!ym||r.desc.includes(ym);
-        return nameMatch&&ymMatch;
-      });
-      relExp.forEach(r=>{
-        rows.push([rocYear,"DEFAULT",3,r.date||TODAY_ROC,"131450-01",code,2,r.expense,r.desc,""]);
-      });
+      // Step3：先算差額，再從金流表找能平衡的支出項目（按日期近遠排序）
+      // 目前借方
+      const curDebit=rows.slice(groupStart).filter(r=>r[6]===1).reduce((s,r)=>s+(Number(r[7])||0),0);
+      // 目前貸方（不含 1110-01，因為還沒加）
+      const curCredit=rows.slice(groupStart).filter(r=>r[6]===2).reduce((s,r)=>s+(Number(r[7])||0),0);
+      // 屋主支出
+      const ownerAmt=cfRow?cfRow.expense+(cfRow.transferFee||0):0;
+      // 差額 = 借方 - (其他貸方 + 屋主支出)
+      const gap=curDebit-curCredit-ownerAmt;
+
+      if(gap>0){
+        // 從金流表找同房源的非屋主支出（按日期近遠排序）
+        const candidates=expOther.filter(r=>{
+          const descClean=r.desc.replace(/[\s]/g,"");
+          return houseKey.length>=2&&(
+            descClean.includes(houseKey)||r.desc.includes(caseName));
+        }).sort((a,b)=>{
+          // 日期近的優先（用 rocDateStr 字串比較）
+          return (b.date||"").localeCompare(a.date||"");
+        });
+
+        // 找子集合加總 = gap（最多6筆，避免計算量過大）
+        const limit=Math.min(candidates.length,6);
+        let found=null;
+        outer:for(let mask=1;mask<(1<<limit);mask++){
+          let sum=0;
+          const selected=[];
+          for(let i=0;i<limit;i++){
+            if(mask&(1<<i)){
+              sum+=candidates[i].expense;
+              selected.push(candidates[i]);
+            }
+          }
+          if(Math.abs(sum-gap)<=1){
+            // 按日期排序後選出
+            found=selected.sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+            break outer;
+          }
+        }
+
+        if(found){
+          found.forEach(r=>{
+            rows.push([rocYear,"DEFAULT",3,r.date||TODAY_ROC,"131450-01",code,2,r.expense,r.desc,""]);
+          });
+          console.log(`找到平衡支出 ${found.length} 筆，合計 ${found.reduce((s,r)=>s+r.expense,0)}`);
+        }else{
+          console.log(`找不到能平衡的支出組合，差額 ${gap}`);
+        }
+      }
 
       // 借貸平衡檢查
 

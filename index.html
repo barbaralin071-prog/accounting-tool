@@ -3293,9 +3293,10 @@ document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
 
     // Step2：電子發票 → 貸方
     invList.forEach(inv=>{
+      // 摘要：直接用案件名稱（不用備註原文）
       const s1=`${inv.caseName}-${inv.yearMonth}-${fangInvoiceTypeName(inv.type)}`;
       const s2=`${s1}-${inv.invoiceNo}`;
-      const invDept=inv.type==="代管費"?"002":""; // 4101-02 → 部門002
+      const invDept=(inv.type==="代管費"||inv.type==="系統服務費")?"002":"";
       rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,fangInvoiceAcctCode(inv.type),inv.custCode,2,inv.untaxed,s1,invDept]);
       rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,"2290",inv.custCode,2,inv.tax,s2,""]);
     });
@@ -3644,7 +3645,14 @@ function parseFangInvoiceXlsx(data){
       // 找房源名稱（非數字、非年月的部分）
       const namePart=parts.find(p=>!/^\d+$/.test(p)&&p!==ymPart);
       // 去掉費用名稱（代管費/修繕費等）
-      caseName=namePart?namePart.replace(/代管費|修繕費|系統費|服務費/g,"").trim():"";
+      // 去掉費用名稱和括號內容
+      caseName=namePart
+        .replace(/代管費|修繕費|系統費|服務費|管理服務費|管理費/g,"")
+        .replace(/管理\d*/g,"")      // 去掉「管理」+數字
+        .replace(/\([^)]*\)/g,"")   // 去掉半形括號
+        .replace(/（[^）]*）/g,"")  // 去掉全形括號
+        .replace(/[-\s]+$/,"")      // 去掉結尾的 - 和空白
+        .trim();
       if(!caseName&&brandName) caseName=brandName;
 
     }else{

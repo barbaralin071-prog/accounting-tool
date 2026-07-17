@@ -2976,7 +2976,10 @@ function parseVoucherXlsx(data){
 // 解析金流表找屋主支出列
 function parseCashflowForThird(data){
   const wb=XLSX.read(data,{type:"array"});
-  const ws=wb.Sheets[wb.SheetNames[0]];
+  // 找含「世貿」「14432」「房務」的工作頁，找不到則用第一個
+  const sheetName=wb.SheetNames.find(n=>n.includes("世貿")||n.includes("14432")||n.includes("房務"))
+    ||wb.SheetNames[0];
+  const ws=wb.Sheets[sheetName];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const rows=[];         // 屋主支出列（主軸）
   const incomeRows=[];   // 收入列
@@ -3364,7 +3367,10 @@ function parseBizInvoiceXlsx(data){
 // 解析業務處金流表
 function parseBizCashflowXlsx(data){
   const wb=XLSX.read(data,{type:"array"});
-  const ws=wb.Sheets[wb.SheetNames[0]];
+  // 找含「仁愛」或「57668」的工作頁，找不到則用第一個
+  const sheetName=wb.SheetNames.find(n=>n.includes("仁愛")||n.includes("57668"))
+    ||wb.SheetNames[0];
+  const ws=wb.Sheets[sheetName];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const rows=[];
   let currentDate="";
@@ -3583,7 +3589,11 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     const{cfRow,invs,isOwner,isTenant}=item;
     const addr=invs[0].caseAddr||cfRow.desc.split("-")[0];
     const rocYear=invs[0].rocYear||115;
-    const dateStr=cfRow.date||"";
+
+    // 日期格式轉換：「6月1日」→「115/06/01」
+    let dateStr=cfRow.date||TODAY_ROC;
+    const mMatch=dateStr.match(/^(\d+)月(\d+)日$/);
+    if(mMatch) dateStr=`${rocYear}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
 
     // 借方摘要：用金流表說明（去掉發票號碼部分）
     const debitSummary=cfRow.desc.replace(/-[A-Z]{2}[\-\d]+/g,"").replace(/-+$/,"").trim();

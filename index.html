@@ -1624,24 +1624,37 @@ bindDropzone("fang-dz-receipt","fang-file-receipt",async(file,dz)=>{
 });
 
 function updateFangMatchBtn(){
-  document.getElementById("fang-btn-match").disabled=!(fangState.bank&&fangState.third);
+  // 只需要網銀就可以比對（帳務報表和收款單選填）
+  document.getElementById("fang-btn-match").disabled=!fangState.bank;
 }
 
 document.getElementById("fang-btn-match").addEventListener("click",()=>{
   clearErr("fang-err");
-  const res=reconcile(fangState.third, fangState.bank);
-  fangState.matched=res.matched;
-  fangState.unmatched=res.unmatched;
 
+  fangState.matched=[];
+  fangState.unmatched=[];
   fangState.bankonlyMatched=[];
   fangState.bankonlyUnmatched=[];
-  if(fangState.receipt && fangState.receipt.length>0){
-    const res2=reconcile(fangState.receipt, res.bankOnly);
+
+  let bankRemaining=fangState.bank.slice(); // 未比對的網銀列
+
+  // 第一輪：帳務報表比對（選填）
+  if(fangState.third&&fangState.third.length>0){
+    const res=reconcile(fangState.third, bankRemaining);
+    fangState.matched=res.matched;
+    fangState.unmatched=res.unmatched;
+    bankRemaining=res.bankOnly;
+  }
+
+  // 第二輪：收款單比對（選填）
+  if(fangState.receipt&&fangState.receipt.length>0){
+    const res2=reconcile(fangState.receipt, bankRemaining);
     fangState.bankonlyMatched=res2.matched;
     fangState.bankonlyUnmatched=res2.bankOnly;
   }else{
-    fangState.bankonlyUnmatched=res.bankOnly;
+    fangState.bankonlyUnmatched=bankRemaining;
   }
+
   renderFangResult();
 });
 

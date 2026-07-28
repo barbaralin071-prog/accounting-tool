@@ -1068,32 +1068,100 @@ function parseRagicXlsx(data){
   if(hi===-1)throw new Error("找不到「收款單編號」欄位，請確認是 RAGIC 收款單格式");
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
+
+  // 解析款項細節說明 → 買受人字串
+  function parseDetail(detail, acct){
+    if(!detail) return acct.includes("現金")||acct.includes("保險箱")?"現金":"";
+    const d=String(detail).replace(/[\r\n]+/g," ").trim();
+    // 含「凌群」→ 特殊處理（由外層判斷）
+    if(d.includes("凌群")) return "凌群";
+    // 屋主黃小明+房客陳大明 → 保留
+    const namedMatch=d.match(/屋主([^\d+\s]+)\s*\+?\s*房客([^\d+\s]+)/);
+    if(namedMatch) return `屋主${namedMatch[1]}+房客${namedMatch[2]}`;
+    const ownerNamed=d.match(/屋主([^\d+\s，,\r\n]+)/);
+    const tenantNamed=d.match(/(?:房客|租客)([^\d+\s，,\r\n]+)/);
+    // 只有屋主
+    if(d.includes("屋主")&&!d.includes("房客")&&!d.includes("租客")){
+      return ownerNamed&&ownerNamed[1].length<=4?`屋主${ownerNamed[1]}`:"屋主";
+    }
+    // 只有房客/租客
+    if((d.includes("房客")||d.includes("租客"))&&!d.includes("屋主")&&!d.includes("房東")){
+      return tenantNamed&&tenantNamed[1].length<=4?`房客${tenantNamed[1]}`:"房客";
+    }
+    // 屋主+房客（含金額或純文字）
+    if((d.includes("屋主")||d.includes("房東"))&&(d.includes("房客")||d.includes("租客"))){
+      const oName=ownerNamed&&ownerNamed[1].length<=4?`屋主${ownerNamed[1]}`:"屋主";
+      const tName=tenantNamed&&tenantNamed[1].length<=4?`房客${tenantNamed[1]}`:"房客";
+      return `${oName}+${tName}`;
+    }
+    return "";
+  }
+
+  // 年月計算（收款月-2，民國年）
+  function calcYm(dateVal){
+    try{
+      const roc=toRoc(dateVal);
+      let m=roc.month-2;
+      let y=roc.year;
+      if(m<=0){m+=12;y--;}
+      return`${y}${pad2(m)}`;
+    }catch(e){return"";}
+  }
+
+  // 地址清理（去掉重複縣市）
+  function cleanAddr(city,dist,street){
+    let addr=(city+dist+street).trim();
+    // 去掉重複的縣市前綴
+    if(addr.startsWith(city+city)) addr=addr.slice(city.length);
+    if(addr.startsWith(dist+dist)) addr=addr.slice(dist.length);
+    return addr;
+  }
+
   return aoa.slice(hi+1)
     .filter(r=>r[col("收款單編號")]!=null)
     .map(r=>{
-      const roc=toRoc(r[col("收款日期")]);
-      const typeRaw=r[col("收款類型")]||"";
+      const acct=String(r[col("收款帳戶")]||"").trim();
+      const detail=String(r[col("款項細節說明")]||"").trim();
+      const isCash=acct.includes("現金")||acct.includes("保險箱");
+      const isLingQun=detail.includes("凌群");
+      const dateVal=r[col("收款日期")];
+      const roc=toRoc(dateVal);
+      const ym=`${roc.year}${pad2(roc.month)}`;
+      const ymMinus2=calcYm(dateVal);
+
+      // 地址
+      const city=String(r[45]||"").trim();
+      const dist=String(r[46]||"").trim();
+      const street=String(r[47]||"").trim();
+      const fullAddr=cleanAddr(city,dist,street)||r[col("地址")]||"";
+
+      // 說明欄
+      let descSuffix=parseDetail(detail,acct);
+      let desc="";
+      if(isLingQun){
+        desc=`凌群-${ymMinus2}服務費`;
+      }else{
+        const addrPart=fullAddr;
+        desc=descSuffix?`${addrPart}-${ym}服務費-${descSuffix}`:`${addrPart}-${ym}服務費`;
+      }
+
+      const typeRaw=String(r[col("收款類型")]||"").trim();
       let acctKey="biz_service";
-      if(typeRaw.includes("定金"))acctKey="biz_deposit";
-      else if(typeRaw.includes("斡旋金"))acctKey="biz_earnest";
+      if(typeRaw.includes("定金")) acctKey="biz_deposit";
+      else if(typeRaw.includes("斡旋金")) acctKey="biz_earnest";
+
       const last5raw=r[col("轉號後五碼")];
-      // 地址：直接用 index（縣市 col49、行政區 col50、地址 col51）
-      const city=r[49]?String(r[49]).trim():"";
-      const district=r[50]?String(r[50]).trim():"";
-      const streetAddr=r[51]?String(r[51]).trim():"";
-      const fullAddr=(city+district+streetAddr)||r[col("地址")]||"";
       return{
         id:r[col("收款單編號")],
         dateKey:roc.dateKey, rocStr:roc.str,
         amount:Number(r[col("收款金額")]),
         typeRaw, acctKey,
-        last5:ragicLast5(last5raw),
-        address:r[col("地址")]||"",
-        fullAddr,
+        last5:isCash?null:ragicLast5(last5raw),
+        isCash, isLingQun,
+        desc, fullAddr,
         reporter:r[col("回報人員")]||"",
         dept:r[col("回報部門")]||"",
-        account:r[col("收款帳戶")]||"",
-        tenantOrOwner:"",
+        account:acct,
       };
     });
 }
@@ -2249,48 +2317,71 @@ document.getElementById("biz-btn-voucher").addEventListener("click",()=>{
 });
 
 document.getElementById("biz-btn-cashflow").addEventListener("click",()=>{
-  const acct=ACCOUNTS["biz_service"];
   const wb=XLSX.utils.book_new();
 
-  // 建立網銀index → 摘要 的 map
+  // 建立網銀index → 說明 的 map
   const bankIndexMap=new Map();
   bizState.bank.forEach((b,i)=>bankIndexMap.set(b,i));
   const bankSummaryMap=new Map();
 
+  // 比對成功的筆：用 s.desc（已在 parseRagicXlsx 組好）
   bizState.matched.forEach(item=>{
     const s=item.source;
-    const summary=acct.buildSummary({address:s.address,fullAddr:s.fullAddr,tenantOrOwner:s.tenantOrOwner});
     const banks=Array.isArray(item.bank)?item.bank:[item.bank];
     banks.forEach(b=>{
       const idx=bankIndexMap.get(b);
-      if(idx!==undefined) bankSummaryMap.set(idx,summary);
+      if(idx!==undefined) bankSummaryMap.set(idx,s.desc);
     });
   });
 
-  // 按網銀原始順序輸出
+  // 網銀備註含「凌群」的筆
+  bizState.bank.forEach((b,i)=>{
+    if((b.note||"").includes("凌群")){
+      const roc=toRoc(b.raw[0]);
+      let m=roc.month-2; let y=roc.year;
+      if(m<=0){m+=12;y--;}
+      const ym=`${y}${pad2(m)}`;
+      bankSummaryMap.set(i,`凌群-${ym}服務費`);
+    }
+  });
+
   const roc0=bizState.bank.length?toRoc(bizState.bank[0].raw[0]):toRoc(new Date());
   const aoa=[];
-  aoa.push([roc0.year+"年", acct.cashflowHeader,null,null,null,null,null]);
+  aoa.push([roc0.year+"年","國泰世華/仁愛分行 #57668 - 銀存明細  業務處",null,null,null,null,null]);
   aoa.push(["日期",null,"說明","收入","支出","匯費","餘額"]);
 
   let lastDate="";
+  // 網銀列
   bizState.bank.forEach((b,i)=>{
     const roc=toRoc(b.raw[0]);
     const dateStr=roc.month+"月"+roc.day+"日";
     const dateCell=dateStr===lastDate?null:dateStr;
-
     if(bankSummaryMap.has(i)){
-      aoa.push([dateCell, bankSummaryMap.get(i), null, b.amount, null, null, null]);
+      aoa.push([dateCell,bankSummaryMap.get(i),null,b.amount,null,null,null]);
     }else{
-      // 未比對到：標記提醒出納
       const note=b.note?`【待填寫摘要】${b.note}`:"【待填寫摘要】";
-      aoa.push([(dateCell?dateCell+" ★":null), note, null, b.amount, null, null, null]);
+      aoa.push([(dateCell?dateCell+" ★":null),note,null,b.amount,null,null,null]);
     }
     lastDate=dateStr;
   });
 
+  // 現金-保險箱的筆（不在網銀裡，從收款單直接加入）
+  const cashItems=[
+    ...(bizState.matched||[]).filter(item=>item.source.isCash),
+    ...(bizState.unmatched||[]).filter(item=>item.isCash),
+    ...(bizState.cashOnly||[]).filter(item=>item.isCash),
+  ];
+  cashItems.forEach(item=>{
+    const s=item.source||item;
+    const roc=toRoc(new Date(s.dateKey?
+      `${Math.floor(s.dateKey/10000)}-${Math.floor((s.dateKey%10000)/100)}-${s.dateKey%100}`:
+      Date.now()));
+    const dateStr=roc.month+"月"+roc.day+"日";
+    aoa.push([dateStr,s.desc,null,s.amount,null,null,null]);
+  });
+
   const ws=XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"]=[{wch:12},{wch:50},{wch:12},{wch:12},{wch:10},{wch:8},{wch:12}];
+  ws["!cols"]=[{wch:12},{wch:55},{wch:12},{wch:12},{wch:10},{wch:8},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,"業務處金流表");
   XLSX.writeFile(wb,"金流表_業務處_"+new Date().toISOString().slice(0,10)+".xlsx");
 });
@@ -3963,4 +4054,3 @@ function renderInvoicePreview(){
 </div><!-- /app-page -->
 </body>
 </html>
-

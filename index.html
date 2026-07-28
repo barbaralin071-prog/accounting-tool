@@ -2804,8 +2804,8 @@ function parseReqXlsx(data){
   return aoa.slice(hi+1).filter(r=>r[0]).map(r=>{
     const receiver=String(r[3]||"").trim();   // 收款人名稱
     const bank=String(r[12]||"").trim();      // 銀行名稱
-    const note=String(r[33]||"").trim();      // 此筆請款備註
-    const amtRaw=String(r[35]||r[31]||"").replace(/[$,\s]/g,"").replace(/\.$/,"");
+    const note=String(r[29]||"").trim();      // 此筆請款備註 col 29
+    const amtRaw=String(r[31]||"").replace(/[$,\s]/g,"").replace(/\.$/,"");
     const amount=parseFloat(amtRaw)||0;            // 總金額（支援$1,000.格式）
     const payDate=r[26];                      // 希望付款日
     let rocDateStr="";

@@ -1142,7 +1142,14 @@ function parseRagicXlsx(data){
         desc=`凌群-${ymMinus2}服務費`;
       }else{
         const addrPart=fullAddr;
-        desc=descSuffix?`${addrPart}-${ym}服務費-${descSuffix}`:`${addrPart}-${ym}服務費`;
+        const base=descSuffix?`${addrPart}-${ym}服務費-${descSuffix}`:`${addrPart}-${ym}服務費`;
+        if(isCash){
+          // 現金收款加備註
+          const rocStr=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+          desc=`${base}(服務費已於${rocStr}現金收款)`;
+        }else{
+          desc=base;
+        }
       }
 
       const typeRaw=String(r[col("收款類型")]||"").trim();

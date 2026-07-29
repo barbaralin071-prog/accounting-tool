@@ -2801,21 +2801,23 @@ function parseReqXlsx(data){
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const hi=aoa.findIndex(r=>r&&r[0]==="請款單流水號");
   if(hi===-1)throw new Error("找不到請款單格式");
+  const headers=aoa[hi];
+  const col=n=>{const idx=headers.indexOf(n);return idx>=0?idx:-1;};
+
   return aoa.slice(hi+1).filter(r=>r[0]).map(r=>{
-    const receiver=String(r[3]||"").trim();   // 收款人名稱
-    const bank=String(r[12]||"").trim();      // 銀行名稱
-    const note=String(r[29]||"").trim();      // 此筆請款備註 col 29
-    const amtRaw=String(r[31]||"").replace(/[$,\s]/g,"").replace(/\.$/,"");
-    const amount=parseFloat(amtRaw)||0;            // 總金額（支援$1,000.格式）
-    const payDate=r[26];                      // 希望付款日
+    const receiver=String(r[col("收款人名稱")]||"").trim();
+    const bank=String(r[col("銀行名稱")]||"").trim();
+    const note=String(r[col("此筆請款備註")]||"").replace(/[\r\n]+/g," ").trim();
+    const amtRaw=String(r[col("總金額")]||"").replace(/[$,\s]/g,"").replace(/\.$/,"");
+    const amount=parseFloat(amtRaw)||0;
+    const payDate=r[col("希望付款日")];
     let rocDateStr="";
     try{ rocDateStr=toRoc(payDate).str; }catch(e){}
 
-    // 判斷是否有地址（含縣市關鍵字）
     const CITY_KEYS=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
     const hasAddress=CITY_KEYS.some(k=>note.includes(k));
-    const reqType=String(r[25]||"").trim();
-    const accountName=String(r[23]||"").trim(); // 戶名 col 23
+    const reqType=String(r[col("請款類型")]||"").trim();
+    const accountName=String(r[col("戶名")]||"").trim();
 
     // 業務勞報且無地址 → 說明改為「戶名-租賃服務」
     const isBizLabor=reqType==="業務勞報"&&!hasAddress;
@@ -2859,22 +2861,18 @@ function parseReqXlsx(data){
       desc=`${note}-${staffName}代`;
     }
 
-    // 匯費判斷：國泰世華、或說明含以下關鍵字 → 不需匯費
     const NO_FEE_KEYWORDS=["電費","水費","電信費","網路費","第四台","凱擘寬頻","中嘉網路"];
     const noFee=isKGIBank(bank)||NO_FEE_KEYWORDS.some(k=>note.includes(k));
     const transferFee=noFee?0:15;
 
-    // 費用所屬部門 → 部門編號
     const DEPT_MAP=[['短租','001'],['房管','002'],['業務','003'],['工程','004'],['營運','005']];
-    const costDept=String(r[20]||"").trim();
+    const costDept=String(r[col("費用所屬部門")]||"").trim();
     const needsDept=["公司帳務","全居包租"].includes(reqType);
-    const deptNo=needsDept
-      ?(DEPT_MAP.find(([k])=>costDept.includes(k))||["",""])[1]
-      :"";
+    const deptNo=needsDept?(DEPT_MAP.find(([k])=>costDept.includes(k))||["",""])[1]:"";
 
-    return{source:"請款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee,
+    return{source:"請款單",orderNo:String(r[0]||"").trim(),rocDateStr,desc,amount,transferFee,
       reqType,accountName,isBizLabor,deptNo,
-      receiver:String(r[3]||"").trim(),
+      receiver:String(r[col("收款人名稱")]||"").trim(),
       raw:r};
   }).filter(r=>r.amount>0);
 }
@@ -2886,10 +2884,23 @@ function parseRefundXlsx(data){
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const hi=aoa.findIndex(r=>r&&r[0]==="退款單流水號");
   if(hi===-1)throw new Error("找不到退款單格式");
+  const headers=aoa[hi];
+  const col=n=>{
+    const idx=headers.indexOf(n);
+    return idx>=0?idx:-1;
+  };
+
   return aoa.slice(hi+1).filter(r=>r[0]).map(r=>{
-    const note=String(r[34]||"").trim();  // 此筆請款備註
-    const amount=Number(r[38])||0;        // 總金額
-    const payDate=r[27];                  // 希望退款日
+    // 備註：先用欄位名稱找，找不到用 col 34
+    const noteCol=col("此筆請款備註")>=0?col("此筆請款備註"):34;
+    const note=String(r[noteCol]||"").replace(/[\r\n]+/g," ").trim();
+    // 金額：先用欄位名稱找，找不到用 col 38
+    const amtCol=col("總金額")>=0?col("總金額"):38;
+    const amtRaw=String(r[amtCol]||"").replace(/[$,\s]/g,"").replace(/\.$/,"");
+    const amount=parseFloat(amtRaw)||Number(r[amtCol])||0;
+    // 希望退款日
+    const payDateCol=col("希望退款日")>=0?col("希望退款日"):27;
+    const payDate=r[payDateCol];
     let rocDateStr="";
     try{ rocDateStr=toRoc(payDate).str; }catch(e){}
 
@@ -2911,17 +2922,19 @@ function parseRefundXlsx(data){
       }
     }
 
-    // 匯費判斷：彙整銀行名稱含「國泰」或彙整銀行代號含「013」→ 0，其餘 15
-    const bankName=String(r[45]||"").trim();
-    const bankCode=String(r[48]||"").trim();
+    // 匯費判斷
+    const bankNameCol=col("彙整銀行名稱")>=0?col("彙整銀行名稱"):45;
+    const bankCodeCol=col("彙整銀行代號")>=0?col("彙整銀行代號"):48;
+    const bankName=String(r[bankNameCol]||"").trim();
+    const bankCode=String(r[bankCodeCol]||"").trim();
     const transferFee=(bankName.includes("國泰")||bankCode.includes("013"))?0:15;
 
-    const dept=String(r[22]||"").trim();
-    // 退款部門對應部門編號
+    const deptCol=col("退款部門")>=0?col("退款部門"):22;
+    const dept=String(r[deptCol]||"").trim();
     const DEPT_MAP=[['短租','001'],['房管','002'],['業務','003'],['工程','004'],['營運','005']];
     const deptNo=(DEPT_MAP.find(([k])=>dept.includes(k))||["",""])[1];
 
-    return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr:"",desc,amount,transferFee,
+    return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr,desc,amount,transferFee,
       dept,deptNo,raw:r};
   }).filter(r=>r.amount>0);
 }

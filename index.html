@@ -2458,11 +2458,17 @@ function parseExpenseCashflowXlsx(data){
 
     aoa.slice(hi+1).forEach(r=>{
       // 更新日期（若有值則更新，空白沿用上一個）
-      if(r[iDate]){
+      if(r[iDate]!=null&&r[iDate]!==""){
         try{
           const roc=toRoc(r[iDate]);
-          currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
-        }catch(e){}
+          if(roc&&roc.year&&roc.month&&roc.day){
+            currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+          }
+        }catch(e){
+          // 嘗試民國日期文字格式（例如「115/07/08」）
+          const s=String(r[iDate]).trim();
+          if(/^\d{3}\/\d{2}\/\d{2}$/.test(s)) currentDate=s;
+        }
       }
 
       const rawDesc=r[iDesc]?String(r[iDesc]):"";
@@ -2765,13 +2771,91 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
 
   XLSX.writeFile(wb,"傳票匯入_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
 
-  // 屋主租金分組（同房源+同年月+同屋主）
-  const ownerGroups=new Map();
-  ownerRows.forEach(row=>{
-    const info=parseOwnerRentDesc(row.desc);
-    const key=`${info.houseName}|${info.ym}|${info.ownerName}`;
-    if(!ownerGroups.has(key)) ownerGroups.set(key,[]);
-    ownerGroups.get(key).push({row,info});
+  // ── 按單號分類產出獨立 Excel ──
+  const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
+
+  // 分類函式
+  function classifyRow(row){
+    const orderNo=row.orderNo||"";
+    const desc=row.desc||"";
+    if(orderNo.includes("代租請")) return "房管屋主出款";
+    if(orderNo.includes("月請")){
+      const isFullAddr=CITY_KEYS_V.some(k=>desc.startsWith(k));
+      if(isFullAddr) return "社宅包租屋主出款";
+      return "全居包租屋主出款";
+    }
+    if(orderNo.includes("請")&&desc.includes("屋主")&&desc.includes("租金")) return "合拆屋主出款";
+    return null;
+  }
+
+  // 按分類分組（保持金流表順序）
+  const fileGroups=new Map();
+  fangPayVoucherState.rows.forEach(row=>{
+    const cat=classifyRow(row);
+    if(!cat) return;
+    if(!fileGroups.has(cat)) fileGroups.set(cat,[]);
+    fileGroups.get(cat).push(row);
+  });
+
+  // 每個分類產出一個 Excel
+  const today=TODAY_ROC.replace(/\//g,"-");
+  fileGroups.forEach((groupRows,cat)=>{
+    const vRows=[HEADERS];
+
+    // 屋主租金分組處理
+    const ownerRowsG=groupRows.filter(r=>{
+      const d=r.desc||"";
+      return d.includes("屋主")&&(d.includes("租金")||d.includes("扣繳")||d.includes("二代健保"));
+    });
+    const normalRowsG=groupRows.filter(r=>!ownerRowsG.includes(r));
+
+    const ownerGroupsG=new Map();
+    ownerRowsG.forEach(row=>{
+      const info=parseOwnerRentDesc(row.desc);
+      const key=`${info.houseName}|${info.ym}|${info.ownerName}`;
+      if(!ownerGroupsG.has(key)) ownerGroupsG.set(key,[]);
+      ownerGroupsG.get(key).push({row,info});
+    });
+
+    ownerGroupsG.forEach((items)=>{
+      const main=items.find(i=>i.info.isMain);
+      const withhold=items.find(i=>i.info.isWithhold);
+      const health=items.find(i=>i.info.is2ndHealth);
+      if(!main) return;
+      const{houseName,code,ym,isFullAddr}=main.info;
+      const mainFee=main.row.fee||0;
+      const dateStr=main.row.rocDateStr||TODAY_ROC;
+      const dept=main.row.deptNo||"";
+      if(isFullAddr){
+        const FC="53939912";
+        vRows.push([115,"DEFAULT",3,dateStr,"131450-01",FC,1,main.row.expense,main.row.desc,dept,liChong("131450-01")]);
+        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
+        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",FC,2,main.row.expense+mainFee,main.row.desc,dept,liChong("1110-01")]);
+        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,withhold.row.expense,withhold.row.desc,dept,liChong("131450-01")]);
+        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,health.row.expense,health.row.desc,dept,liChong("131450-01")]);
+      }else{
+        const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0)+(health?.row.expense||0);
+        vRows.push([115,"DEFAULT",3,dateStr,"5990-01",code,1,totalAmt,`${houseName}-${ym}租金`,dept,liChong("5990-01")]);
+        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
+        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",code,2,main.row.expense,main.row.desc,dept,liChong("1110-01")]);
+        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01",code,2,withhold.row.expense,withhold.row.desc,dept,liChong("1110-01")]);
+        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"1110-01",code,2,health.row.expense,health.row.desc,dept,liChong("1110-01")]);
+      }
+    });
+
+    normalRowsG.forEach(row=>{
+      const vLines=buildExpenseVoucherLines(row);
+      vLines.forEach(line=>{
+        vRows.push([115,"DEFAULT",3,row.rocDateStr||TODAY_ROC,
+          line.acctCode,line.custCode,line.dc,line.amount,line.summary,row.deptNo||"",liChong(line.acctCode)]);
+      });
+    });
+
+    const ws=XLSX.utils.aoa_to_sheet(vRows);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const wbOut=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wbOut,ws,"傳票累積檔");
+    XLSX.writeFile(wbOut,`${cat}_${today}.xlsx`);
   });
 
 });

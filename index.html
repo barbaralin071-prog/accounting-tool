@@ -914,7 +914,8 @@ const ACCOUNTS = {
 
 // 立沖否判斷
 function liChong(acctCode){
-  return ["2205-01","2205-02","2205-03"].includes(acctCode)?"Y":"N";
+  const Y_CODES=["2205-01","2205-02","2205-03","131450-01","1130","2205-031","2910-01"];
+  return Y_CODES.includes(acctCode)?"Y":"N";
 }
 function todayRoc(){
   const d=new Date();

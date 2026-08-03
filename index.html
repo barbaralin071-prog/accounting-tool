@@ -4234,7 +4234,8 @@ if(_fangInvResetBtn) _fangInvResetBtn.addEventListener("click",()=>{
   clearErr("fang-inv-err");
 });
 
-document.getElementById("fang-inv-download").addEventListener("click",()=>{
+const _fangInvDownloadBtn=document.getElementById("fang-inv-download");
+if(_fangInvDownloadBtn) _fangInvDownloadBtn.addEventListener("click",()=>{
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   const rows=[HEADERS];
   fangInvState.invoices.forEach(inv=>{
@@ -4418,27 +4419,35 @@ function sheTodayDateKey(){
   const d=new Date();
   return d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate();
 }
+function sheShiftDateKey(dk, deltaDays){
+  const y=Math.floor(dk/10000), m=Math.floor((dk%10000)/100), d=dk%100;
+  const dt=new Date(y,m-1,d);
+  dt.setDate(dt.getDate()+deltaDays);
+  return dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();
+}
 function sheNoteContainsName(note, name){
   if(!note||!name) return false;
   const n=String(name).replace(/\s+/g,'');
   return n.length>0 && String(note).replace(/\s+/g,'').includes(n);
 }
 
-// 產生應繳排程（僅限已知租金的房客），上限至 untilDateKey
-function buildSheSchedule(untilDateKey){
+// 產生應繳排程（僅限已知租金的房客），範圍限制在 [fromKey, untilKey]（通常對應網銀金流表涵蓋區間 ± 緩衝天數）
+function buildSheSchedule(fromKey, untilKey){
   const list=[];
   SHEZHAI_TENANTS.forEach(t=>{
     if(t.rent==null) return;
     const [sy,sm,sd]=t.start.split('-').map(Number);
     const dueDay=sd;
     let y=sy,m=sm,idx=1;
-    while(idx<=72){
+    while(idx<=120){
       const dk=sheDueDateKey(y,m,dueDay);
-      if(dk>untilDateKey) break;
-      list.push({
-        tenantId:t.id, name:t.name, addr:t.addr, amount:t.rent,
-        period:idx, ym:y+"-"+pad2(m), dateKey:dk, rocStr:rocStr(dk),
-      });
+      if(dk>untilKey) break;
+      if(dk>=fromKey){
+        list.push({
+          tenantId:t.id, name:t.name, addr:t.addr, amount:t.rent,
+          period:idx, ym:y+"-"+pad2(m), dateKey:dk, rocStr:rocStr(dk),
+        });
+      }
       idx++;
       const nx=sheAddMonths(y,m,1); y=nx[0]; m=nx[1];
     }
@@ -4531,26 +4540,39 @@ bindDropzone("she-dz-bank","she-file-bank",async(file,dz)=>{
 document.getElementById("she-btn-match").addEventListener("click",()=>{
   clearErr("she-err");
   const bank=sheState.bank||[];
+  if(!bank.length){
+    showErr("she-err","網銀金流表沒有可比對的存入資料");
+    return;
+  }
   const todayKey=sheTodayDateKey();
-  const bankMaxKey=bank.length?Math.max(...bank.map(b=>b.dateKey)):todayKey;
-  const untilKey=Math.max(todayKey, bankMaxKey);
+  const bankMinKey=Math.min(...bank.map(b=>b.dateKey));
+  const bankMaxKey=Math.max(...bank.map(b=>b.dateKey));
+  // 比對範圍＝網銀金流表涵蓋區間，前後各留 SHE_WINDOW_DAYS 天緩衝
+  const fromKey=sheShiftDateKey(bankMinKey, -SHE_WINDOW_DAYS);
+  const untilKey=Math.min(sheShiftDateKey(bankMaxKey, SHE_WINDOW_DAYS), todayKey+SHE_WINDOW_DAYS);
 
-  const dueList=buildSheSchedule(untilKey);
+  const dueList=buildSheSchedule(fromKey, untilKey);
   const res=matchShe(dueList, bank.slice());
 
-  // 未繳名單只顯示「已到應繳日」者，尚未到期的排程不列入未繳
-  res.unmatched=res.unmatched.filter(d=>d.dateKey<=todayKey);
+  // 未繳名單只顯示「落在網銀實際涵蓋日期內、且已到應繳日」者
+  // （fromKey/untilKey 有留緩衝天數是為了比對用，但未繳的認定要以網銀真正涵蓋的範圍為準，
+  //   避免網銀還沒涵蓋到的月份被誤判成未繳）
+  res.unmatched=res.unmatched.filter(d=>
+    d.dateKey>=bankMinKey && d.dateKey<=Math.min(todayKey,bankMaxKey));
+  res.ambiguous=res.ambiguous.filter(a=>
+    a.due.dateKey>=bankMinKey && a.due.dateKey<=Math.min(todayKey,bankMaxKey));
 
   sheState.matched=res.matched;
   sheState.unmatched=res.unmatched;
   sheState.ambiguous=res.ambiguous;
   sheState.bankOnly=res.bankOnly;
+  sheState.rangeStr=`${rocStr(bankMinKey)} ～ ${rocStr(bankMaxKey)}`;
 
   renderSheResult();
 });
 
 document.getElementById("she-btn-reset").addEventListener("click",()=>{
-  sheState={bank:null, matched:[], unmatched:[], ambiguous:[], bankOnly:[]};
+  sheState={bank:null, matched:[], unmatched:[], ambiguous:[], bankOnly:[], rangeStr:null};
   document.getElementById("she-upload").hidden=false;
   document.getElementById("she-result").hidden=true;
   const dz=document.getElementById("she-dz-bank");
@@ -4683,10 +4705,11 @@ function renderSheResult(){
 
   // ── 狀態列 ──
   const statusEl=document.getElementById("she-status");
+  const rangeTxt=sheState.rangeStr?`（比對範圍：網銀 ${sheState.rangeStr}，前後留 ${SHE_WINDOW_DAYS} 天緩衝）`:"";
   if(unmatched.length===0 && ambiguous.length===0){
-    statusEl.innerHTML=`<span class="ok" style="font-weight:700;">✓ 目前無未繳或待確認紀錄</span>`;
+    statusEl.innerHTML=`<span class="ok" style="font-weight:700;">✓ 此範圍內無未繳或待確認紀錄</span>${rangeTxt}`;
   }else{
-    statusEl.innerHTML=`<span class="warn">⚠ 未繳 ${unmatched.length} 筆　待人工確認 ${ambiguous.length} 筆</span>`;
+    statusEl.innerHTML=`<span class="warn">⚠ 未繳 ${unmatched.length} 筆　待人工確認 ${ambiguous.length} 筆</span>${rangeTxt}`;
   }
 }
 

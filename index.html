@@ -848,7 +848,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <thead><tr>
             <th>#</th><th>房客姓名</th><th>案件地址</th>
             <th>應繳月份</th><th>應繳日期</th><th class="right">應繳金額</th>
-            <th>媒合編號</th><th>逾期天數</th>
+            <th>媒合編號</th><th>逾期天數</th><th>操作</th>
           </tr></thead>
           <tbody id="she-tb-unmatched"></tbody>
         </table>
@@ -858,12 +858,15 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </div>
 
       <!-- 金額重複待確認 -->
-      <div class="sec-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;">❓ 金額重複，需人工確認</div>
+      <div class="sec-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;">
+        ❓ 金額重複，需人工確認
+        <span style="font-size:11.5px;font-weight:400;color:var(--ink-soft);">— 點「選這筆」會算已繳（移出未繳名單）；點「都不是」會直接列入未繳租名單</span>
+      </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th>#</th><th>房客姓名</th><th>案件地址</th>
-            <th>應繳月份</th><th class="right">應繳金額</th><th>候選網銀入帳筆數</th><th>候選明細</th>
+            <th>應繳月份</th><th class="right">應繳金額</th><th>人工確認</th>
           </tr></thead>
           <tbody id="she-tb-ambiguous"></tbody>
         </table>
@@ -876,7 +879,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <thead><tr>
             <th>#</th><th>房客姓名</th><th>案件地址</th>
             <th>應繳月份</th><th>應繳日期</th><th class="right">應繳金額</th>
-            <th>入帳日期</th><th class="right">入帳金額</th><th>末五碼</th><th>判斷依據</th>
+            <th>入帳日期</th><th class="right">入帳金額</th><th>末五碼</th><th>判斷依據</th><th>操作</th>
           </tr></thead>
           <tbody id="she-tb-matched"></tbody>
         </table>
@@ -4456,6 +4459,7 @@ function buildSheSchedule(fromKey, untilKey){
         list.push({
           tenantId:t.id, name:t.name, addr:t.addr, amount:t.rent,
           period:idx, ym:y+"-"+pad2(m), dateKey:dk, rocStr:rocStr(dk),
+          dueKey:t.id+"_"+dk,
         });
       }
       idx++;
@@ -4467,7 +4471,9 @@ function buildSheSchedule(fromKey, untilKey){
 
 // 社宅網銀金流表解析：與其他部門網銀格式相同（帳務日期／存入金額／備註／末五碼欄位一致）
 function parseSheBankXlsx(data){
-  return parseBankXlsx(data);
+  const rows=parseBankXlsx(data);
+  rows.forEach((r,i)=>{ r._bidx=i; }); // 給每筆入帳一個穩定索引，供人工確認/復原時辨識用
+  return rows;
 }
 
 // 比對：金額相符為主，末五碼與備註房客姓名為輔助判斷
@@ -4532,7 +4538,15 @@ function matchShe(dueList, bankList){
   return{matched, unmatched, ambiguous, bankOnly};
 }
 
-let sheState={bank:null, fileName:null, allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
+let sheState={
+  bank:null, fileName:null,
+  // 自動比對的原始結果（不受人工確認影響，重新整理的基礎）
+  rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[],
+  // 套用人工確認後、實際顯示用的結果
+  allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[],
+  manualResolutions:{}, // dueKey -> {action:'confirm', bankIdx} | {action:'unpaid'}
+  rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null,
+};
 
 const SHE_STORAGE_KEY="she_reconcile_state_v1";
 
@@ -4540,8 +4554,9 @@ function sheSaveState(){
   try{
     localStorage.setItem(SHE_STORAGE_KEY, JSON.stringify({
       bank:sheState.bank, fileName:sheState.fileName,
-      allMatched:sheState.allMatched, allUnmatched:sheState.allUnmatched,
-      allAmbiguous:sheState.allAmbiguous, allBankOnly:sheState.allBankOnly,
+      rawMatched:sheState.rawMatched, rawUnmatched:sheState.rawUnmatched,
+      rawAmbiguous:sheState.rawAmbiguous, rawBankOnly:sheState.rawBankOnly,
+      manualResolutions:sheState.manualResolutions,
       rangeStr:sheState.rangeStr, selectedYm:sheState.selectedYm,
       bankMinKey:sheState.bankMinKey, bankMaxKey:sheState.bankMaxKey,
       savedAt:new Date().toISOString(),
@@ -4559,14 +4574,84 @@ function sheClearStorage(){
   try{ localStorage.removeItem(SHE_STORAGE_KEY); }catch(e){}
 }
 
+// 把「人工確認／標記未繳」的決定，套用到自動比對的原始結果上，算出最終顯示用的四組清單。
+// 每次人工操作後都會重跑一次；同一筆入帳一旦被某期領走，其餘待確認期別的候選會自動排除，
+// 若因此只剩一個候選，會自動判定成功（連鎖解算），不用每筆都手動點。
+function sheApplyResolutions(){
+  let matched=sheState.rawMatched.slice();
+  let usedBankIdx=new Set(matched.map(m=>m.bank._bidx));
+  let unmatched=sheState.rawUnmatched.slice();
+  let pending=sheState.rawAmbiguous.slice();
+
+  let changed=true;
+  while(changed){
+    changed=false;
+    const stillPending=[];
+    pending.forEach(item=>{
+      const dueKey=item.due.dueKey;
+      const res=sheState.manualResolutions[dueKey];
+
+      if(res && res.action==="confirm"){
+        const bank=item.candidates.find(c=>c._bidx===res.bankIdx);
+        if(bank && !usedBankIdx.has(bank._bidx)){
+          matched.push({due:item.due, bank, reason:"人工確認"});
+          usedBankIdx.add(bank._bidx);
+          changed=true;
+          return;
+        }
+        // 候選已被其他期別領走（理論上少見），該決定失效，清掉重新排隊
+        delete sheState.manualResolutions[dueKey];
+      }else if(res && res.action==="unpaid"){
+        unmatched.push({...item.due, manual:true});
+        changed=true;
+        return;
+      }
+
+      const remain=item.candidates.filter(c=>!usedBankIdx.has(c._bidx));
+      if(remain.length===0){
+        unmatched.push({...item.due});
+        changed=true;
+        return;
+      }
+      if(remain.length===1){
+        matched.push({due:item.due, bank:remain[0], reason:"金額＋期間唯一命中（排除已認領項目後）"});
+        usedBankIdx.add(remain[0]._bidx);
+        changed=true;
+        return;
+      }
+      stillPending.push({due:item.due, candidates:remain});
+    });
+    pending=stillPending;
+  }
+
+  sheState.allMatched=matched;
+  sheState.allUnmatched=unmatched;
+  sheState.allAmbiguous=pending;
+  sheState.allBankOnly=sheState.rawBankOnly.filter(b=>!usedBankIdx.has(b._bidx));
+}
+
+function sheResolveAmbiguous(dueKey, action, bankIdx){
+  sheState.manualResolutions[dueKey]={action, bankIdx};
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
+}
+
+function sheUndoResolution(dueKey){
+  delete sheState.manualResolutions[dueKey];
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
+}
+
 // 依「應繳月份」重建下拉選單選項（只列出網銀真正涵蓋日期範圍內的月份，緩衝區產生的月份不列入選單）
 function sheBuildMonthOptions(){
   const inRange=dk=>sheState.bankMinKey==null||sheState.bankMaxKey==null
     ||(dk>=sheState.bankMinKey && dk<=sheState.bankMaxKey);
   const yms=new Set();
-  sheState.allMatched.forEach(m=>{ if(inRange(m.due.dateKey)) yms.add(m.due.ym); });
-  sheState.allUnmatched.forEach(d=>{ if(inRange(d.dateKey)) yms.add(d.ym); });
-  sheState.allAmbiguous.forEach(a=>{ if(inRange(a.due.dateKey)) yms.add(a.due.ym); });
+  sheState.rawMatched.forEach(m=>{ if(inRange(m.due.dateKey)) yms.add(m.due.ym); });
+  sheState.rawUnmatched.forEach(d=>{ if(inRange(d.dateKey)) yms.add(d.ym); });
+  sheState.rawAmbiguous.forEach(a=>{ if(inRange(a.due.dateKey)) yms.add(a.due.ym); });
   const sorted=[...yms].sort().reverse(); // 新到舊
   const sel=document.getElementById("she-month-select");
   sel.innerHTML="";
@@ -4628,22 +4713,27 @@ document.getElementById("she-btn-match").addEventListener("click",()=>{
   res.ambiguous=res.ambiguous.filter(a=>
     a.due.dateKey>=bankMinKey && a.due.dateKey<=Math.min(todayKey,bankMaxKey));
 
-  sheState.allMatched=res.matched;
-  sheState.allUnmatched=res.unmatched;
-  sheState.allAmbiguous=res.ambiguous;
-  sheState.allBankOnly=res.bankOnly;
+  sheState.rawMatched=res.matched;
+  sheState.rawUnmatched=res.unmatched;
+  sheState.rawAmbiguous=res.ambiguous;
+  sheState.rawBankOnly=res.bankOnly;
+  sheState.manualResolutions={}; // 換一份新的比對結果，之前的人工確認清空重來
   sheState.rangeStr=`${rocStr(bankMinKey)} ～ ${rocStr(bankMaxKey)}`;
   sheState.bankMinKey=bankMinKey;
   sheState.bankMaxKey=bankMaxKey;
   sheState.selectedYm=""; // 比對完先給最新月份（由 sheBuildMonthOptions 決定)
 
+  sheApplyResolutions();
   sheBuildMonthOptions();
   renderSheResult();
   sheSaveState();
 });
 
 document.getElementById("she-btn-reset").addEventListener("click",()=>{
-  sheState={bank:null, fileName:null, allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
+  sheState={bank:null, fileName:null,
+    rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[],
+    allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[],
+    manualResolutions:{}, rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
   sheClearStorage();
   document.getElementById("she-upload").hidden=false;
   document.getElementById("she-result").hidden=true;
@@ -4661,10 +4751,11 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   if(!saved || !saved.bank || !saved.bank.length) return;
   sheState.bank=saved.bank;
   sheState.fileName=saved.fileName;
-  sheState.allMatched=saved.allMatched||[];
-  sheState.allUnmatched=saved.allUnmatched||[];
-  sheState.allAmbiguous=saved.allAmbiguous||[];
-  sheState.allBankOnly=saved.allBankOnly||[];
+  sheState.rawMatched=saved.rawMatched||[];
+  sheState.rawUnmatched=saved.rawUnmatched||[];
+  sheState.rawAmbiguous=saved.rawAmbiguous||[];
+  sheState.rawBankOnly=saved.rawBankOnly||[];
+  sheState.manualResolutions=saved.manualResolutions||{};
   sheState.rangeStr=saved.rangeStr;
   sheState.selectedYm=saved.selectedYm||"";
   sheState.bankMinKey=saved.bankMinKey;
@@ -4675,7 +4766,8 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   dz.querySelector(".dz-label").textContent="✓ "+(sheState.fileName||"（已還原上次資料）");
   document.getElementById("she-btn-match").disabled=false;
 
-  if(sheState.allMatched.length||sheState.allUnmatched.length||sheState.allAmbiguous.length||sheState.allBankOnly.length){
+  if(sheState.rawMatched.length||sheState.rawUnmatched.length||sheState.rawAmbiguous.length||sheState.rawBankOnly.length){
+    sheApplyResolutions();
     sheBuildMonthOptions();
     renderSheResult();
     const savedNote=document.getElementById("she-status");
@@ -4721,19 +4813,27 @@ function renderSheResult(){
         <td class="mono right">${fmtMoney(d.amount)}</td>
         <td class="mono">${d.tenantId||"—"}</td>
         <td><span class="tag warn">逾期 ${overdueDays} 天</span></td>
+        <td>${d.manual?`<button class="btn ghost she-undo-btn" data-duekey="${d.dueKey}" style="padding:3px 8px;font-size:11px;">↩ 撤銷</button>`:"—"}</td>
       `;
       tbU.appendChild(tr);
     });
   if(!unmatched.length){
-    tbU.innerHTML=`<tr><td colspan="8" style="color:var(--ink-faint);text-align:center;padding:16px;">目前無未繳租紀錄</td></tr>`;
+    tbU.innerHTML=`<tr><td colspan="9" style="color:var(--ink-faint);text-align:center;padding:16px;">目前無未繳租紀錄</td></tr>`;
   }
+  tbU.querySelectorAll(".she-undo-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>sheUndoResolution(btn.dataset.duekey));
+  });
 
   // ── 金額重複待確認 ──
   const tbA=document.getElementById("she-tb-ambiguous");
   tbA.innerHTML="";
   ambiguous.forEach((item,i)=>{
     const d=item.due;
-    const candDesc=item.candidates.map(b=>`${rocStr(b.dateKey)}／${fmtMoney(b.amount)}／備註:${b.note||"—"}／末五碼:${b.last5||b.partnerLast5||"—"}`).join("<br>");
+    const candHtml=item.candidates.map(c=>`
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+        <button class="btn secondary she-pick-btn" data-duekey="${d.dueKey}" data-bidx="${c._bidx}" style="padding:3px 9px;font-size:11px;white-space:nowrap;">✓ 選這筆</button>
+        <span style="font-size:12px;">${rocStr(c.dateKey)}／${fmtMoney(c.amount)}／備註:${c.note||"—"}／末五碼:${c.last5||c.partnerLast5||"—"}</span>
+      </div>`).join("");
     const tr=document.createElement("tr");
     tr.className="unmatched";
     tr.innerHTML=`
@@ -4742,14 +4842,22 @@ function renderSheResult(){
       <td>${d.addr}</td>
       <td class="mono">${d.ym}</td>
       <td class="mono right">${fmtMoney(d.amount)}</td>
-      <td class="mono">${item.candidates.length}</td>
-      <td style="white-space:normal;min-width:260px;font-size:12px;">${candDesc}</td>
+      <td style="white-space:normal;min-width:300px;">
+        ${candHtml}
+        <button class="btn ghost she-markunpaid-btn" data-duekey="${d.dueKey}" style="padding:3px 9px;font-size:11px;margin-top:2px;">🚫 都不是這些，列入未繳</button>
+      </td>
     `;
     tbA.appendChild(tr);
   });
   if(!ambiguous.length){
-    tbA.innerHTML=`<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:16px;">無需人工確認的筆數</td></tr>`;
+    tbA.innerHTML=`<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:16px;">無需人工確認的筆數</td></tr>`;
   }
+  tbA.querySelectorAll(".she-pick-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>sheResolveAmbiguous(btn.dataset.duekey,"confirm",Number(btn.dataset.bidx)));
+  });
+  tbA.querySelectorAll(".she-markunpaid-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>sheResolveAmbiguous(btn.dataset.duekey,"unpaid",null));
+  });
 
   // ── 比對成功 ──
   const tbM=document.getElementById("she-tb-matched");
@@ -4759,6 +4867,7 @@ function renderSheResult(){
     .sort((a,b)=>a.due.dateKey-b.due.dateKey)
     .forEach((item,i)=>{
       const d=item.due, b=item.bank;
+      const isManual=item.reason==="人工確認";
       const tr=document.createElement("tr");
       tr.className="matched";
       tr.innerHTML=`
@@ -4772,12 +4881,16 @@ function renderSheResult(){
         <td class="mono right">${fmtMoney(b.amount)}</td>
         <td class="mono">${b.last5||b.partnerLast5||"—"}</td>
         <td><span class="tag ok">${item.reason}</span></td>
+        <td>${isManual?`<button class="btn ghost she-undo-btn" data-duekey="${d.dueKey}" style="padding:3px 8px;font-size:11px;">↩ 撤銷</button>`:"—"}</td>
       `;
       tbM.appendChild(tr);
     });
   if(!matched.length){
-    tbM.innerHTML=`<tr><td colspan="10" style="color:var(--ink-faint);text-align:center;padding:16px;">無比對成功筆數</td></tr>`;
+    tbM.innerHTML=`<tr><td colspan="11" style="color:var(--ink-faint);text-align:center;padding:16px;">無比對成功筆數</td></tr>`;
   }
+  tbM.querySelectorAll(".she-undo-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>sheUndoResolution(btn.dataset.duekey));
+  });
 
   // ── 網銀存入但無對應房客 ──
   const tbB=document.getElementById("she-tb-bankonly");

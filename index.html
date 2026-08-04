@@ -235,7 +235,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     <button class="btn-logout" onclick="handleLogout()">登出</button>
   </div>
 </header>
-  <span class="badge">房源 288 筆 · 房管處帳戶 1 組 · 業務處帳戶 1 組 · 社宅房客 113 筆</span>
+  <span class="badge">房源 288 筆 · 房管處帳戶 1 組 · 業務處帳戶 1 組 · 社宅房客 117 筆</span>
 </header>
 
 <!-- 部門 Tab -->
@@ -796,7 +796,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 
   <div id="she-upload">
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
-      已內建社宅媒合管理資料 <strong id="she-tenant-count">0</strong> 筆（房客姓名／案件地址／租金／契約起始日）。
+      已內建社宅媒合管理資料 <strong id="she-tenant-count">0</strong> 筆（房客姓名／案件地址／應繳總金額／契約起始日）。
+      應繳金額＝租金＋管理費（房客負擔時）＋停車位管理費＋其他費用（房客負擔時）。
       應繳日＝契約起始日的「日」，比對條件：<strong>金額相符為主</strong>，網銀轉入帳號末五碼／備註含房客姓名為輔助判斷。
     </div>
     <div class="upload-row" style="grid-template-columns:1fr 1fr;">
@@ -894,12 +895,15 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </div>
 
       <!-- 網銀存入但無對應房客 -->
-      <div class="sec-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;">📥 網銀存入但無對應房客</div>
+      <div class="sec-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;">
+        📥 網銀存入但無對應房客
+        <span style="font-size:11.5px;font-weight:400;color:var(--ink-soft);">— 如果你知道這筆是哪位房客繳的，可以直接手動核對到未繳/待確認期別</span>
+      </div>
       <div class="tbl-wrap">
         <table>
           <thead><tr>
             <th>#</th><th>入帳日期</th><th class="right">入帳金額</th>
-            <th>備註</th><th>虛擬帳號末五碼</th><th>對手末五碼</th><th>備註疑似房客</th>
+            <th>備註</th><th>虛擬帳號末五碼</th><th>對手末五碼</th><th>備註疑似房客</th><th>手動核對</th>
           </tr></thead>
           <tbody id="she-tb-bankonly"></tbody>
         </table>
@@ -907,14 +911,14 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 
       <!-- 收款單登記但找不到對應期別（僅在有上傳收款單時顯示）-->
       <div class="sec-label" id="she-receiptonly-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;display:none;">
-        🧾 收款單有登記，但找不到唯一對應的應繳期別
-        <span style="font-size:11.5px;font-weight:400;color:var(--ink-soft);">— 可能是金額重複命中多個期別、或不在這次比對的月份範圍內，請人工核對</span>
+        🧾 收款單有登記，但沒有救回未繳／待確認
+        <span style="font-size:11.5px;font-weight:400;color:var(--ink-soft);">— 多半是這位房客當月租金已經透過網銀直接比對成功了（重複登記，正常現象），少數才是真的需要人工核對，詳見「原因」欄，也可以直接手動核對到未繳/待確認期別</span>
       </div>
       <div class="tbl-wrap" id="she-receiptonly-wrap" style="display:none;">
         <table>
           <thead><tr>
             <th>#</th><th>收款單編號</th><th>收款日期</th><th class="right">收款金額</th>
-            <th>轉號後五碼</th><th>款項細節說明</th>
+            <th>轉號後五碼</th><th>款項細節說明</th><th>原因</th><th>手動核對</th>
           </tr></thead>
           <tbody id="she-tb-receiptonly"></tbody>
         </table>
@@ -1009,7 +1013,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
 const HOUSING_DATA = [{"code":"AH1150705","name":"成都159","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150704","name":"辛亥77","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150703","name":"敦煌80","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150702","name":"文林北254","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150701","name":"民生186","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150606","name":"中山2245","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150605","name":"昆明46","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150604","name":"延平北255","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150603","name":"新北大298","aliases":["新北大道298"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150602","name":"和城262","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150601","name":"羅斯福269","aliases":["羅斯福路269"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150506","name":"保健67","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150505","name":"南京東250","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150504","name":"汀洲39","aliases":["汀州39"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150503","name":"信義127","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150502","name":"青年168-6","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150501","name":"青年168-5","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150407","name":"思源512","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150406","name":"寶興70(2F短租)","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150405","name":"信義235","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150404","name":"同安72","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150403","name":"民族219","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150402","name":"松勤9","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150401","name":"興南93","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150305","name":"中正223","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150304","name":"中和390","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150303","name":"八德182","aliases":[],"service":"包租-B","rentMode":"","deptNo":""}, {"code":"AH1150302","name":"南京東368","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1150301","name":"雙連23","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150209","name":"龍門191","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150208","name":"明水539","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150207","name":"臨沂3","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150206","name":"民權東58-5","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150205","name":"福美街128","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150204","name":"興隆123","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150203","name":"忠孝東524","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150202","name":"承德292","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1150201","name":"仁愛33","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150102","name":"承德116","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1150101","name":"和平東55","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1141208","name":"大安國宅1156","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141207","name":"環河241","aliases":["環河南241"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141206","name":"合江144","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1141205","name":"成都106","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1141204","name":"錦州50-23","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141203","name":"中興37","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1141202","name":"南港130","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1141201","name":"光復南294","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141103","name":"環河西245","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141102","name":"羅斯福284","aliases":[],"service":"包租-B","rentMode":"年租管理","deptNo":"002"}, {"code":"AH1141101","name":"天祥80","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1141003","name":"明德333","aliases":["明德333"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141002","name":"崇實63","aliases":["崇實63"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1141001","name":"羅斯福2","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1140904","name":"新生北61","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140903","name":"宜安2","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140804","name":"南京東291","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1140803","name":"雙城13","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1140802","name":"艋舺120-5","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140801","name":"復興南132","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH1140704","name":"松江431","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140703","name":"通化88","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140702","name":"四平107","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1140701","name":"健康178","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406413","name":"博愛25","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406412","name":"板橋香社56","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406410","name":"寶清5","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406409","name":"中山北96","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406408","name":"實踐93","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406407","name":"新店中華48","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406406","name":"承德69","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406405","name":"杭州南93","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406404","name":"成功193","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406403","name":"松山119","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406402","name":"華陰95","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406401","name":"南京東75","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406400","name":"康定232","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406399","name":"永和166","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406398","name":"集美197","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406397","name":"泰順40","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406396","name":"重陽125","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406395","name":"秀明112","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406394","name":"南京東108","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406393","name":"竹林39","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406392","name":"內湖91","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406391","name":"康樂48","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406390","name":"三重雙園1","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406389","name":"東湖119","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406388","name":"新府86","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406387","name":"艋舺120","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406386","name":"寶安37","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406385","name":"民權東103","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406384","name":"十四張381","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406383","name":"錦州30","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406382","name":"安居99","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406381","name":"秀明103","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406380","name":"板橋民生323","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406379","name":"忠孝東272","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406378","name":"成都155","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406377","name":"育英45","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406376","name":"忠孝東783","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406375","name":"蘆洲長安249","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406374","name":"文德22","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406373","name":"南京東45","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406372","name":"板橋合安25","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406371","name":"五分92","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406370","name":"北投知行228","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406369","name":"桂林6","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406368","name":"華固月河20","aliases":["華固月河20"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406367","name":"南京東53","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406366","name":"民生東56","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406365","name":"承德40","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406364","name":"汐止水源","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406363","name":"永貞437","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406362","name":"同安97","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406361","name":"和平西382","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406360","name":"民權東58","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406359","name":"泰順60","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406358","name":"文化90","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406357","name":"八德106","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406356","name":"建中48","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406355","name":"成都81","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406354","name":"信義317","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406353","name":"華江35","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406352","name":"東湖16","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406351","name":"安德52","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406350","name":"寶興70","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406349","name":"內湖737-5","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406348","name":"內湖737-4","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406347","name":"北新122","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406346","name":"樂業108","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406345","name":"辛亥222","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406344","name":"內湖323","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406343","name":"和平東363","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406342","name":"國光112","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406341","name":"民生東29","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406340","name":"萬盛68","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406339","name":"塔城44","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406338","name":"港墘57","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406337","name":"連城65","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406336","name":"重慶北47","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406335","name":"保慶6","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406334","name":"長安西45","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406333","name":"延吉68","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406332","name":"民生東80","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406331","name":"介壽106","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406330","name":"五常53","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406329","name":"北安595","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406328","name":"大安169","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406327","name":"吉林142","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406326","name":"信義147","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406325","name":"忠孝東206","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406324","name":"和平東95","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406323","name":"泰順50","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406322","name":"浦城6","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406321","name":"大安52","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406320","name":"和平東175","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406319","name":"和平東50","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406318","name":"基隆97","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406317","name":"羅斯福10","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406316","name":"景興195","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406315","name":"羅斯福202(901)","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406314","name":"中山北72","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406313","name":"五原19","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406312","name":"民生東147","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406311","name":"中山北137","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406310","name":"重慶北22","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406309","name":"中山北83","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406308","name":"晉江48","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406307","name":"汀州27","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406305","name":"晉江18","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406304","name":"同安93","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406303","name":"晉江19","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406302","name":"金門11","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406301","name":"羅斯福68","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406300","name":"汀州188","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406299","name":"萬大277","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406298","name":"興德76","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406295","name":"英士28","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406294","name":"景美147","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406293","name":"羅斯福176","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406292","name":"保平207","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406291","name":"文化366","aliases":[],"service":"合作拆帳-HC","rentMode":"","deptNo":""}, {"code":"AH11406290","name":"通化168","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406289","name":"景興153","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406288","name":"公館26","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406287","name":"長沙61","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406286","name":"和平東10","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406285","name":"臥龍4","aliases":[],"service":"包租-B","rentMode":"年租管理","deptNo":"002"}, {"code":"AH11406284","name":"連勝38","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH11406283","name":"信義松山465","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406282","name":"和平東1","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406281","name":"松山204","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406280","name":"民生西232","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406279","name":"淡水中正12","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406278","name":"南京東303","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406277","name":"中坡北40","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406276","name":"信義53","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH11406275","name":"港墘37","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH11406274","name":"敦化南177","aliases":[],"service":"合作拆帳-HC","rentMode":"短租管理","deptNo":""}, {"code":"AH11406273","name":"中山北85","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140502","name":"瑞安23","aliases":["瑞安23"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140501","name":"板橋文昌24居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140401","name":"三中145居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140202","name":"民生東112居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1140201","name":"長春11居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1131203","name":"中原33居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1131202","name":"新巨蛋居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1131201","name":"EAT9-5居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1131001","name":"翡冷翠居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130903","name":"安居60居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130902","name":"忠孝783居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130901","name":"中和中2號居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130805","name":"中和復興居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130804","name":"中和勝利居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130803","name":"敦化100居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130802","name":"常殷至善園居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130801","name":"大安51居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130602","name":"雙園居所","aliases":[],"service":"包租-B","rentMode":"年租管理","deptNo":"002"}, {"code":"AH1130601","name":"吉林142居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130503","name":"潤泰央北居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130502","name":"重慶居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130473","name":"雙十居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130472","name":"翡冷翠居所(舊)","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130471","name":"瑞安居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130470","name":"新生南居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130468","name":"象山居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130467","name":"通安居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130466","name":"美麗行館2號居所","aliases":[],"service":"包租-B","rentMode":"年租管理","deptNo":"002"}, {"code":"AH1130465","name":"美麗行館1號居所(中山北53)","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1130464","name":"昆明1010居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130463","name":"昆明0413居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130462","name":"延吉居所","aliases":[],"service":"包租-B","rentMode":"","deptNo":""}, {"code":"AH1130460","name":"江翠居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130459","name":"四維居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130458","name":"中原居所","aliases":[],"service":"包租-B","rentMode":"","deptNo":""}, {"code":"AH1130457","name":"大安居所(信義186)","aliases":[],"service":"包租-B","rentMode":"短租管理","deptNo":"001"}, {"code":"AH1130456","name":"大安19居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130455","name":"八德居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130452","name":"品城西居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130451","name":"昆明0902居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130450","name":"敦煌居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130449","name":"偶戲館(八德106)居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130448","name":"芝山居所","aliases":["芝山"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130447","name":"Imore居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130446","name":"長安東居所","aliases":["長安東"],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130445","name":"松機居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130444","name":"紅寶石居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130443","name":"北中居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130442","name":"民生東137居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130441","name":"南京三民居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130440","name":"大橋頭居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130439","name":"小北居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130437","name":"昆明1207居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130436","name":"西門1號居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130435","name":"新巨蛋居所(舊)","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130434","name":"實踐居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130433","name":"光灧居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130432","name":"戀戀居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130431","name":"大安192居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130430","name":"幸福居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130429","name":"文聖居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130428","name":"南勢角居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130427","name":"景華20居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130426","name":"敦化2號居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130425","name":"學士居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130424","name":"萬芳居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130422","name":"璞真仰睦居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130421","name":"樂華居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130420","name":"永愛居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130419","name":"永和樂居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130418","name":"中和中居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130417","name":"忠孝251居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130416","name":"圓山居所","aliases":[],"service":"代管-D","rentMode":"","deptNo":""}, {"code":"AH1130415","name":"通化180居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130414","name":"古亭居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130413","name":"西門2號居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130412","name":"中正879居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130411","name":"通化39居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130410","name":"敦化1號居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130409","name":"何必館居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130408","name":"尚林苑居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130407","name":"景興居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130406","name":"成福居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130405","name":"中正614居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130404","name":"永吉278居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130403","name":"保安居所","aliases":[],"service":"包租-B","rentMode":"年租管理","deptNo":"002"}, {"code":"AH1130402","name":"小室哲哉居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""}, {"code":"AH1130401","name":"弘道居所","aliases":[],"service":"代管-D","rentMode":"年租管理","deptNo":""},{"code":"AH1150707","name":"重新331","aliases":[],"service":"","rentMode":"","deptNo":""},{"code":"AH1150708","name":"五原19車位","aliases":[],"service":"","rentMode":"","deptNo":""},{"code":"AH1150710","name":"永福108","aliases":[],"service":"","rentMode":"","deptNo":""}];
 // HOUSING_SORTED 已在下方 matchHousing 區塊定義
 
-const SHEZHAI_TENANTS = [{"id":"凌群新北B2M34100106","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2025-08-05","status":"DONE"},{"id":"凌群台北A2M34100129","name":"鄧勝哲","addr":"台北市中山區錦州街262號四樓","rent":10000,"start":"2025-08-08","status":"DONE"},{"id":"凌群台北A2M34100138","name":"葉士賢","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2025-08-15","status":"DONE"},{"id":"凌群新北B2M30400131-1","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2025-08-20","status":"DONE"},{"id":"租寓平台A2M30400043","name":"黃晟恩","addr":"台北市南港區成福路168號三樓之6","rent":17000,"start":"2025-07-10","status":"DONE"},{"id":"凌群台北A2M34100143","name":"彭羽慈","addr":"台北市中正區漢口街一段110號八樓之12","rent":26000,"start":"2025-09-01","status":"DONE"},{"id":"租寓平台A2M30400047","name":"劉繼仁","addr":"台北市中山區錦州街30巷11號七樓之26","rent":12000,"start":"2026-03-15","status":"DONE"},{"id":"租寓平台A2M30400037-1","name":"鄧乃綺","addr":"台北市信義區吳興街34巷1號三樓之1","rent":19900,"start":"2025-09-05","status":"DONE"},{"id":"凌群新北B2M30400177","name":"蕭睆珍","addr":"新北市新店區中央路175號七樓之2","rent":16000,"start":"2025-09-05","status":"DONE"},{"id":"租寓平台A2M30400035-1","name":"林若喬","addr":"台北市信義區莊敬路423巷4弄13號三樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400033-1","name":"周蔡莎娜","addr":"台北市信義區莊敬路423巷4弄13號四樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400036-1","name":"胡崇胤","addr":"台北市信義區莊敬路423巷4弄13號","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"凌群新北B2M30400176","name":"陳淑玫","addr":"新北市板橋區雙十路二段98號三樓","rent":19900,"start":"2025-09-15","status":"DONE"},{"id":"凌群新北B2M34100122","name":"莊峰源","addr":"新北市永和區福和路236號二樓","rent":19900,"start":"2025-10-01","status":"DONE"},{"id":"租寓平台A2M30400002-2","name":"朱容瑩","addr":"台北市南港區研究院路二段197巷21號三樓","rent":16000,"start":"2025-10-01","status":"DONE"},{"id":"凌群新北B2M30500001","name":"江廷安","addr":"新北市淡水區八勢一街63巷42號七樓","rent":17000,"start":"2025-10-10","status":"DONE"},{"id":"凌群臺北A2M30500004","name":"林大宏","addr":"台北市信義區莊敬路423巷4弄15號四樓","rent":19000,"start":"2025-10-10","status":"DONE"},{"id":"凌群台北A2M34100003-1","name":"陳信助","addr":"台北市士林區中正路399巷18號二樓","rent":16000,"start":"2025-10-12","status":"DONE"},{"id":"凌群台北A2M34100007-1","name":"李仙娥","addr":"台北市萬華區艋舺大道420號四樓","rent":19500,"start":"2025-10-16","status":"DONE"},{"id":"租寓平台A2M30400041","name":"曾沛玲","addr":"台北市中正區羅斯福路二段150號五樓","rent":16800,"start":"2025-03-10","status":"DONE"},{"id":"租寓平台A2M30400005-2","name":"王亭媗","addr":"台北市萬華區雙和街58號三樓","rent":15000,"start":"2025-10-18","status":"DONE"},{"id":"租寓平台A2M30400040","name":"朱軒穎","addr":"台北市中山區民生東路一段48號八樓之4","rent":17700,"start":"2024-12-05","status":"DONE"},{"id":"凌群臺北A2M30500008","name":"莊侑勳","addr":"台北市萬華區西藏路125巷13號二樓之1","rent":30000,"start":"2025-10-30","status":"DONE"},{"id":"凌群臺北A2M30500009","name":"陳貞文","addr":"台北市松山區八德路四段72巷16弄14號四樓","rent":23000,"start":"2025-10-31","status":"DONE"},{"id":"凌群臺北A2M30500014","name":"張益文","addr":"台北市信義區大道路137號一樓","rent":31200,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500013","name":"陳敬仁","addr":"台北市中山區中山北路二段65巷17之1號四樓","rent":26000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M30500009","name":"林淑美","addr":"新北市淡水區竿蓁二街19巷12之1號十一樓","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500011","name":"王得翰","addr":"台北市萬華區環河南路二段147號八樓之1","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群台北A2M34100011-1","name":"葉倩宇","addr":"台北市萬華區成都路139號三樓之3","rent":25000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M34100015-1","name":"徐智薇","addr":"新北市中和區中正路602號五樓","rent":17000,"start":"2025-11-15","status":"DONE"},{"id":"租寓平台A2M30400007-2","name":"陳珠英","addr":"台北市萬華區萬大路137巷18號二樓","rent":15000,"start":"2025-11-15","status":"DONE"},{"id":"凌群臺北A2M30500023","name":"廖紫伶","addr":"臺北市大同區大龍街10號二樓","rent":23000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100154","name":"汪詩融","addr":"台北市中山區德惠街34號七樓之27","rent":13000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100056-1","name":"邱鈺佩","addr":"台北市士林區士東路266巷12弄7號五樓","rent":26000,"start":"2026-02-15","status":"DONE"},{"id":"凌群台北A2M34100014-1","name":"易夢姍","addr":"台北市中山區龍江路408號四樓","rent":15000,"start":"2025-11-20","status":"DONE"},{"id":"凌群台北A2M34100045-1","name":"刁袣幗","addr":"台北市萬華區西昌街142號七樓之2","rent":25000,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100019-1","name":"高健利","addr":"新北市土城區中央路四段58之1號二樓","rent":23000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100015-1","name":"楊佩容","addr":"台北市中山區龍江路410號四樓","rent":15000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100013-1","name":"蘇俊青","addr":"台北市大安區復興南路一段126巷1號五樓之7","rent":19800,"start":"2025-11-25","status":"DONE"},{"id":"凌群臺北A2M30500031","name":"張貽鈞","addr":"台北市北投區天母北路105巷15弄1號七樓之5","rent":13500,"start":"2025-12-01","status":"DONE"},{"id":"租寓平台A2M30400008-2","name":"陳聖淦","addr":"台北市萬華區青年路152巷31號四樓","rent":11000,"start":"2025-12-01","status":"DONE"},{"id":"凌群新北B2M30500023","name":"江曉雯","addr":"新北市板橋區南雅東路21號三樓","rent":10000,"start":"2025-12-01","status":"DONE"},{"id":"凌群臺北A2M30500029","name":"王佳玉","addr":"台北市大同區延平北路四段93之2號四樓","rent":25000,"start":"2025-12-05","status":"DONE"},{"id":"凌群臺北A2M30500035","name":"薛里華","addr":"台北市內湖區內湖路二段103巷92弄10號五樓之2","rent":24000,"start":"2025-12-05","status":"DONE"},{"id":"凌群新北B2M30500032","name":"江嘉偉","addr":"新北市淡水區竿蓁二街19巷8之1號三樓","rent":16100,"start":"2025-12-10","status":"DONE"},{"id":"凌群新北B2M30500035","name":"黃文凌","addr":"新北市板橋區民生路三段281巷2弄11號五樓","rent":19900,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100020-1","name":"吳珮嫙","addr":"台北市中山區新生北路二段70號七樓之7","rent":23000,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100023-1","name":"馬志朋","addr":"台北市中山區南京東路三段48巷38號十一樓之1","rent":19500,"start":"2025-12-15","status":"DONE"},{"id":"凌群台北A2M34100024-1","name":"王愛玉","addr":"台北市萬華區西昌街142號七樓之1","rent":12000,"start":"2025-12-17","status":"DONE"},{"id":"凌群台北A2M34100026-1","name":"郭子賢","addr":"台北市大同區延平北路四段117號三樓","rent":15000,"start":"2025-12-18","status":"DONE"},{"id":"凌群新北B2M30500039","name":"李耀宗","addr":"新北市三重區中正南路250巷11號二十七樓","rent":19900,"start":"2026-01-01","status":"DONE"},{"id":"凌群臺北A2M30500058","name":"陳捷","addr":"台北市士林區中山北路六段152號四樓之2","rent":19500,"start":"2026-01-01","status":"DONE"},{"id":"凌群台北A2M34100036-1","name":"李芳瑜","addr":"台北市大同區民生西路171巷3號十四樓之1","rent":14000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100042-1","name":"高如玟","addr":"台北市中山區松江路28號九樓","rent":18000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100037-1","name":"莊富安","addr":"台北市中正區臨沂街61巷20號一樓","rent":15000,"start":"2026-01-15","status":"DONE"},{"id":"凌群新北B2M30500043","name":"王慧芝","addr":"新北市板橋區國慶路195號七樓","rent":28000,"start":"2026-01-16","status":"DONE"},{"id":"凌群台北A2M34100047-1","name":"林國聯","addr":"台北市內湖區潭美街89號一樓、二樓","rent":14500,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100042-1","name":"曾瓊玉","addr":"新北市板橋區光武街36巷6號五樓","rent":19900,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100053-1","name":"王以太","addr":"台北市萬華區萬大路137巷37號五樓","rent":19000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100051-1","name":"李芷菁","addr":"台北市中山區錦州街30巷11號七樓之6","rent":7500,"start":"2026-02-01","status":"DONE"},{"id":"凌群臺北A2M30500064","name":"廖炫雄","addr":"台北市萬華區東園街154巷9弄22號一樓","rent":16000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100164","name":"林顯聖","addr":"台北市萬華區西園路一段57號二樓","rent":27000,"start":"2026-02-01","status":"DONE"},{"id":"凌群新北B2M34100044-1","name":"林冠彣","addr":"新北市淡水區中山北路一段180巷8號三樓","rent":16000,"start":"2026-02-05","status":"DONE"},{"id":"租寓平台A2M30400009-1","name":"施中涵","addr":"台北市士林區社子街97巷13號二樓","rent":17000,"start":"2025-02-10","status":"DONE"},{"id":"凌群新北B2M30500057","name":"鍾易政","addr":"新北市板橋區南雅東路15號三樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"租寓平台A2M30400010-2","name":"連絹蓉","addr":"台北市士林區基河路40號十一樓之6","rent":15700,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M30400153-1","name":"鄧奕辰","addr":"新北市永和區仁愛路352巷134號二樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"凌群臺北A2M30500077","name":"林鍾秀麗","addr":"台北市北投區大同街200巷3號三樓","rent":23500,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M34100040-1","name":"孫苑綾","addr":"新北市新莊區昌平街71巷19號十四樓","rent":22000,"start":"2026-03-01","status":"DONE"},{"id":"凌群台北A2M34100066-1","name":"游芬彩","addr":"台北市南港區南深路9號三樓","rent":19900,"start":"2026-03-05","status":"DONE"},{"id":"凌群台北A2M34100079-1","name":"吳仙英","addr":"台北市中正區中華路二段443巷1號一樓、二樓","rent":17000,"start":"2026-04-01","status":"DONE"},{"id":"租寓平台A2M30400011-2","name":"容毓雅","addr":"台北市南港區南深路33之4號","rent":16000,"start":"2026-03-26","status":"DONE"},{"id":"凌群台北A2M34100065-1","name":"宮敏","addr":"台北市中山區中原街22號五樓之8","rent":19900,"start":"2026-04-01","status":"DONE"},{"id":"凌群台北A2M30500090","name":"黃毅強","addr":"台北市中山區新生北路三段1號十樓之12","rent":16000,"start":"2026-04-01","status":"DONE"},{"id":"凌群新北B2M30500071","name":"謝宜勳","addr":"新北市汐止區茄苳路325號四樓","rent":19900,"start":"2026-04-04","status":"DONE"},{"id":"凌群新北B2M30500076","name":"賴聲聞","addr":"新北市新莊區中誠街38號四樓","rent":23000,"start":"2026-04-14","status":"DONE"},{"id":"凌群新北B2M34100062-1","name":"蘇詩涵","addr":"新北市板橋區民生路二段32號二樓","rent":19900,"start":"2026-04-15","status":"DONE"},{"id":"凌群新北B2M30500075","name":"游皓翔","addr":"新北市汐止區新昌路5號二樓","rent":28500,"start":"2026-04-15","status":"DONE"},{"id":"凌群台北A2M30500094","name":"林哲安","addr":"台北市中山區新生北路二段108號六樓之19","rent":12000,"start":"2026-04-20","status":"DONE"},{"id":"凌群臺北A2M30500112","name":"吳思鴻","addr":"台北市信義區大道路137之1號五樓","rent":19900,"start":"2026-05-01","status":"DONE"},{"id":"凌群台北A2M34100174","name":"林郁珊","addr":"台北市中山區民權東路二段135巷16號六樓之4","rent":18000,"start":"2026-05-01","status":"DONE"},{"id":"租寓平台A2M30400022-2","name":"吳嘉雯","addr":"台北市士林區承德路四段40巷24號","rent":15000,"start":"2026-05-15","status":"DONE"},{"id":"租寓平台A2M30400020-2","name":"邱羿捷","addr":"台北市萬華區雙和街60號二樓","rent":12000,"start":"2026-05-16","status":"DONE"},{"id":"租寓平台A2M30400021-2","name":"潘永安","addr":"台北市北投區實踐街20號二樓","rent":19000,"start":"2026-05-15","status":"DONE"},{"id":"凌群台北A2M34100096-1","name":"蔡毓玲","addr":"台北市中正區中華路二段443巷3號一、二樓","rent":17000,"start":"2026-05-16","status":"DONE"},{"id":"凌群台北A2M34100102-1","name":"張毓芳","addr":"台北市大同區大龍街91巷12號十二樓之8","rent":23500,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M30500122","name":"顏煒芯","addr":"台北市大安區通化街38巷10之3號一樓","rent":10000,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100175","name":"林裕逸","addr":"台北市文山區興隆路二段252號十四樓之2","rent":18000,"start":"2026-06-01","status":"DONE"},{"id":"凌群新北B2M30500097","name":"張鳳玲","addr":"新北市板橋區莒光路86號三樓","rent":19900,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100103-1","name":"張倪禎","addr":"台北市大同區延平北路一段51號九樓之5","rent":17800,"start":"2026-06-02","status":"DONE"},{"id":"凌群新北B2M34100088-1","name":"林國泰","addr":"新北市林口區仁愛路一段256號五樓","rent":13000,"start":"2026-06-10","status":"DONE"},{"id":"凌群台北A2M30500128","name":"周予寧","addr":"台北市中正區林森南路137號五樓之2","rent":19700,"start":"2026-06-12","status":"DONE"},{"id":"租寓平台A2M30400042-1","name":"葉承寬","addr":"台北市信義區吳興街600巷96弄6號三樓","rent":23500,"start":"2026-06-15","status":"SENT"},{"id":"凌群台北A2M34100110-1","name":"許乃文","addr":"台北市萬華區中華路一段68號十三樓之2","rent":19000,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500101","name":"魏芷榕","addr":"新北市三峽區大智路8之6號十一樓","rent":16000,"start":"2026-06-15","status":"DONE"},{"id":"凌群台北A2M30500125","name":"陳梅岑","addr":"台北市中山區新生北路二段62巷40號六樓之一","rent":19900,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500109","name":"陳韋廷","addr":"新北市中和區大仁街10巷16弄9號二樓","rent":26500,"start":"2026-06-16","status":"DONE"},{"id":"X097","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":14500,"start":"2026-08-10","status":"SENT"},{"id":"凌群新北B2M34100093-1","name":"陳堯暄","addr":"新北市永和區文化路90巷27弄1號","rent":19900,"start":"2026-07-07","status":"SENT"},{"id":"凌群新北B2M34100144","name":"黃孟芸","addr":"新北市蘆洲區中興街89號十四樓之三","rent":15000,"start":"2026-07-08","status":"DONE"},{"id":"凌群台北A2M34100114-1","name":"林孍","addr":"台北市大安區辛亥路一段40號五樓","rent":15000,"start":"2026-07-10","status":"SENT"},{"id":"凌群新北B2M30400171-1","name":"梁韡馨","addr":"新北市中和區景平路433號十五樓之七","rent":16000,"start":"2026-08-01","status":"SENT"},{"id":"凌群台北A2M34100125-1","name":"胡崇軒","addr":"台北市信義區松勇路53巷6號七樓","rent":15000,"start":"2026-08-01","status":"SENT"},{"id":"凌群新北B2M34100106-1","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2026-08-05","status":"SENT"},{"id":"換房客","name":"陳冠岑","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2026-08-15","status":"SENT"},{"id":"凌群新北B2M30400131-2","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2026-08-20","status":"SENT"},{"id":"凌群新北B2M34100080-1","name":"黃美玲","addr":"新北市淡水區沙崙路171號九樓","rent":15000,"start":"2026-05-01","status":"DONE"},{"id":"X107","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":null,"start":"2026-07-01","status":"SENT"},{"id":"X108","name":"呂郭玉燕","addr":"台北市信義區莊敬路423巷4弄13號二樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X109","name":"劉宇翔","addr":"新北市汐止區汐萬路二段228巷31弄62號5樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X110","name":"施昱丞","addr":"新北市鶯歌區湖山路28巷4號","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X111","name":"陳宏祈","addr":"新北市蘆洲區九芎街41號四樓","rent":null,"start":"2026-08-01","status":"IN PROGRESS"},{"id":"X112","name":"王禧龍","addr":"台北市北投區溫泉路37巷26號八樓之6","rent":null,"start":"2026-08-10","status":"IN PROGRESS"}];
+const SHEZHAI_TENANTS = [{"id":"凌群新北B2M34100106","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2025-08-05","status":"DONE"},{"id":"凌群台北A2M34100129","name":"鄧勝哲","addr":"台北市中山區錦州街262號四樓","rent":10000,"start":"2025-08-08","status":"DONE"},{"id":"凌群台北A2M34100138","name":"葉士賢","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2025-08-15","status":"DONE"},{"id":"凌群新北B2M30400131-1","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2025-08-20","status":"DONE"},{"id":"凌群台北A2M34100137","name":"李青樺","addr":"台北市中山區德惠街34號七樓之27","rent":13800,"start":"2025-08-25","status":"DONE"},{"id":"租寓平台A2M30400043","name":"黃晟恩","addr":"台北市南港區成福路168號三樓之6","rent":18095,"start":"2025-07-10","status":"DONE"},{"id":"租寓平台A2M30400001-2","name":"王宥閎","addr":"台北市中山區錦州街30巷11號七樓之26","rent":12790,"start":"2025-09-01","status":"DONE"},{"id":"凌群台北A2M34100143","name":"彭羽慈","addr":"台北市中正區漢口街一段110號八樓之12","rent":28270,"start":"2025-09-01","status":"DONE"},{"id":"租寓平台A2M30400047","name":"劉繼仁","addr":"台北市中山區錦州街30巷11號七樓之26","rent":12790,"start":"2026-03-15","status":"DONE"},{"id":"租寓平台A2M30400037-1","name":"鄧乃綺","addr":"台北市信義區吳興街34巷1號三樓之1","rent":19900,"start":"2025-09-05","status":"DONE"},{"id":"凌群新北B2M30400177","name":"蕭睆珍","addr":"新北市新店區中央路175號七樓之2","rent":16990,"start":"2025-09-05","status":"DONE"},{"id":"租寓平台A2M30400035-1","name":"林若喬","addr":"台北市信義區莊敬路423巷4弄13號三樓","rent":15000,"start":"2025-09-10","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"租寓平台A2M30400033-1","name":"周蔡莎娜","addr":"台北市信義區莊敬路423巷4弄13號四樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400036-1","name":"胡崇胤","addr":"台北市信義區莊敬路423巷4弄13號","rent":15000,"start":"2025-09-10","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群新北B2M30400176","name":"陳淑玫","addr":"新北市板橋區雙十路二段98號三樓","rent":21000,"start":"2025-09-15","status":"DONE"},{"id":"凌群台北A2M34100148","name":"蔣振華","addr":"台北市文山區興隆路二段252號十四樓之2","rent":19157,"start":"2025-09-20","status":"DONE"},{"id":"凌群新北B2M34100122","name":"莊峰源","addr":"新北市永和區福和路236號二樓","rent":19900,"start":"2025-10-01","status":"DONE"},{"id":"租寓平台A2M30400002-2","name":"朱容瑩","addr":"台北市南港區研究院路二段197巷21號三樓","rent":16000,"start":"2025-10-01","status":"DONE"},{"id":"凌群新北B2M30500001","name":"江廷安","addr":"新北市淡水區八勢一街63巷42號七樓","rent":19305,"start":"2025-10-10","status":"DONE"},{"id":"凌群臺北A2M30500004","name":"林大宏","addr":"台北市信義區莊敬路423巷4弄15號四樓","rent":19000,"start":"2025-10-10","status":"DONE"},{"id":"凌群台北A2M34100003-1","name":"陳信助","addr":"台北市士林區中正路399巷18號二樓","rent":16000,"start":"2025-10-12","status":"DONE"},{"id":"凌群台北A2M34100007-1","name":"李仙娥","addr":"台北市萬華區艋舺大道420號四樓","rent":19500,"start":"2025-10-16","status":"DONE"},{"id":"租寓平台A2M30400041","name":"曾沛玲","addr":"台北市中正區羅斯福路二段150號五樓","rent":18800,"start":"2025-03-10","status":"DONE"},{"id":"租寓平台A2M30400005-2","name":"王亭媗","addr":"台北市萬華區雙和街58號三樓","rent":15000,"start":"2025-10-18","status":"DONE"},{"id":"租寓平台A2M30400040","name":"朱軒穎","addr":"台北市中山區民生東路一段48號八樓之4","rent":19700,"start":"2024-12-05","status":"DONE"},{"id":"凌群臺北A2M30500008","name":"莊侑勳","addr":"台北市萬華區西藏路125巷13號二樓之1","rent":32400,"start":"2025-10-30","status":"DONE"},{"id":"凌群臺北A2M30500009","name":"陳貞文","addr":"台北市松山區八德路四段72巷16弄14號四樓","rent":23000,"start":"2025-10-31","status":"DONE"},{"id":"凌群臺北A2M30500014","name":"張益文","addr":"台北市信義區大道路137號一樓","rent":31200,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500018","name":"吳思鴻","addr":"台北市信義區大道路137之1號五樓","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500013","name":"陳敬仁","addr":"台北市中山區中山北路二段65巷17之1號四樓","rent":26000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M30500009","name":"林淑美","addr":"新北市淡水區竿蓁二街19巷12之1號十一樓","rent":22000,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500011","name":"王得翰","addr":"台北市萬華區環河南路二段147號八樓之1","rent":22000,"start":"2025-11-01","status":"DONE"},{"id":"凌群台北A2M34100011-1","name":"葉倩宇","addr":"台北市萬華區成都路139號三樓之3","rent":26638,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M34100015-1","name":"徐智薇","addr":"新北市中和區中正路602號五樓","rent":17000,"start":"2025-11-15","status":"DONE"},{"id":"租寓平台A2M30400007-2","name":"陳珠英","addr":"台北市萬華區萬大路137巷18號二樓","rent":15000,"start":"2025-11-15","status":"DONE"},{"id":"凌群臺北A2M30500023","name":"廖紫伶","addr":"臺北市大同區大龍街10號二樓","rent":23300,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100154","name":"汪詩融","addr":"台北市中山區德惠街34號七樓之27","rent":13800,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100056-1","name":"邱鈺佩","addr":"台北市士林區士東路266巷12弄7號五樓","rent":26350,"start":"2026-02-15","status":"DONE"},{"id":"凌群台北A2M34100014-1","name":"易夢姍","addr":"台北市中山區龍江路408號四樓","rent":15000,"start":"2025-11-20","status":"DONE"},{"id":"凌群台北A2M34100045-1","name":"刁袣幗","addr":"台北市萬華區西昌街142號七樓之2","rent":26330,"start":"2026-01-20","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群新北B2M34100019-1","name":"高健利","addr":"新北市土城區中央路四段58之1號二樓","rent":24000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100015-1","name":"楊佩容","addr":"台北市中山區龍江路410號四樓","rent":15000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100013-1","name":"蘇俊青","addr":"台北市大安區復興南路一段126巷1號五樓之7","rent":21200,"start":"2025-11-25","status":"DONE"},{"id":"凌群臺北A2M30500031","name":"張貽鈞","addr":"台北市北投區天母北路105巷15弄1號七樓之5","rent":17900,"start":"2025-12-01","status":"DONE"},{"id":"租寓平台A2M30400008-2","name":"陳聖淦","addr":"台北市萬華區青年路152巷31號四樓","rent":11000,"start":"2025-12-01","status":"DONE"},{"id":"凌群新北B2M30500023","name":"江曉雯","addr":"新北市板橋區南雅東路21號三樓","rent":10000,"start":"2025-12-01","status":"DONE"},{"id":"凌群臺北A2M30500029","name":"王佳玉","addr":"台北市大同區延平北路四段93之2號四樓","rent":25000,"start":"2025-12-05","status":"DONE"},{"id":"凌群臺北A2M30500035","name":"薛里華","addr":"台北市內湖區內湖路二段103巷92弄10號五樓之2","rent":27364,"start":"2025-12-05","status":"DONE"},{"id":"凌群新北B2M30500032","name":"江嘉偉","addr":"新北市淡水區竿蓁二街19巷8之1號三樓","rent":22000,"start":"2025-12-10","status":"DONE"},{"id":"凌群新北B2M30500035","name":"黃文凌","addr":"新北市板橋區民生路三段281巷2弄11號五樓","rent":19900,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100020-1","name":"吳珮嫙","addr":"台北市中山區新生北路二段70號七樓之7","rent":23900,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100023-1","name":"馬志朋","addr":"台北市中山區南京東路三段48巷38號十一樓之1","rent":22500,"start":"2025-12-15","status":"DONE"},{"id":"凌群台北A2M34100024-1","name":"王愛玉","addr":"台北市萬華區西昌街142號七樓之1","rent":12530,"start":"2025-12-17","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群台北A2M34100026-1","name":"郭子賢","addr":"台北市大同區延平北路四段117號三樓","rent":15000,"start":"2025-12-18","status":"DONE"},{"id":"凌群新北B2M30500039","name":"李耀宗","addr":"新北市三重區中正南路250巷11號二十七樓","rent":23000,"start":"2026-01-01","status":"DONE"},{"id":"凌群臺北A2M30500058","name":"陳捷","addr":"台北市士林區中山北路六段152號四樓之2","rent":19500,"start":"2026-01-01","status":"DONE"},{"id":"凌群台北A2M34100036-1","name":"李芳瑜","addr":"台北市大同區民生西路171巷3號十四樓之1","rent":14000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100042-1","name":"高如玟","addr":"台北市中山區松江路28號九樓","rent":19245,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100037-1","name":"莊富安","addr":"台北市中正區臨沂街61巷20號一樓","rent":15000,"start":"2026-01-15","status":"DONE"},{"id":"凌群新北B2M30500043","name":"王慧芝","addr":"新北市板橋區國慶路195號七樓","rent":30123,"start":"2026-01-16","status":"DONE"},{"id":"凌群台北A2M34100047-1","name":"林國聯","addr":"台北市內湖區潭美街89號一樓、二樓","rent":14500,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100042-1","name":"曾瓊玉","addr":"新北市板橋區光武街36巷6號五樓","rent":19900,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100053-1","name":"王以太","addr":"台北市萬華區萬大路137巷37號五樓","rent":19000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100051-1","name":"李芷菁","addr":"台北市中山區錦州街30巷11號七樓之6","rent":8290,"start":"2026-02-01","status":"DONE"},{"id":"凌群臺北A2M30500064","name":"廖炫雄","addr":"台北市萬華區東園街154巷9弄22號一樓","rent":16000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100164","name":"林顯聖","addr":"台北市萬華區西園路一段57號二樓","rent":27000,"start":"2026-02-01","status":"DONE"},{"id":"凌群新北B2M34100044-1","name":"林冠彣","addr":"新北市淡水區中山北路一段180巷8號三樓","rent":16000,"start":"2026-02-05","status":"DONE"},{"id":"租寓平台A2M30400009-1","name":"施中涵","addr":"台北市士林區社子街97巷13號二樓","rent":17000,"start":"2025-02-10","status":"DONE"},{"id":"凌群新北B2M30500057","name":"鍾易政","addr":"新北市板橋區南雅東路15號三樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"租寓平台A2M30400010-2","name":"連絹蓉","addr":"台北市士林區基河路40號十一樓之6","rent":17500,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M30400153-1","name":"鄧奕辰","addr":"新北市永和區仁愛路352巷134號二樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"凌群臺北A2M30500077","name":"林鍾秀麗","addr":"台北市北投區大同街200巷3號三樓","rent":23500,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M34100040-1","name":"孫苑綾","addr":"新北市新莊區昌平街71巷19號十四樓","rent":22760,"start":"2026-03-01","status":"DONE"},{"id":"凌群台北A2M34100066-1","name":"游芬彩","addr":"台北市南港區南深路9號三樓","rent":19900,"start":"2026-03-05","status":"DONE"},{"id":"凌群台北A2M34100079-1","name":"吳仙英","addr":"台北市中正區中華路二段443巷1號一樓、二樓","rent":17000,"start":"2026-04-01","status":"DONE"},{"id":"租寓平台A2M30400011-2","name":"容毓雅","addr":"台北市南港區南深路33之4號","rent":16727,"start":"2026-03-26","status":"DONE"},{"id":"凌群台北A2M34100065-1","name":"宮敏","addr":"台北市中山區中原街22號五樓之8","rent":21144,"start":"2026-04-01","status":"DONE"},{"id":"凌群台北A2M30500090","name":"黃毅強","addr":"台北市中山區新生北路三段1號十樓之12","rent":17287,"start":"2026-04-01","status":"DONE"},{"id":"凌群新北B2M30500071","name":"謝宜勳","addr":"新北市汐止區茄苳路325號四樓","rent":19900,"start":"2026-04-04","status":"DONE"},{"id":"凌群新北B2M30500076","name":"賴聲聞","addr":"新北市新莊區中誠街38號四樓","rent":23000,"start":"2026-04-14","status":"DONE"},{"id":"凌群新北B2M34100062-1","name":"蘇詩涵","addr":"新北市板橋區民生路二段32號二樓","rent":22500,"start":"2026-04-15","status":"DONE"},{"id":"凌群新北B2M30500075","name":"游皓翔","addr":"新北市汐止區新昌路5號二樓","rent":29250,"start":"2026-04-15","status":"DONE"},{"id":"凌群台北A2M30500094","name":"林哲安","addr":"台北市中山區新生北路二段108號六樓之19","rent":12870,"start":"2026-04-20","status":"DONE"},{"id":"凌群臺北A2M30500112","name":"吳思鴻","addr":"台北市信義區大道路137之1號五樓","rent":19900,"start":"2026-05-01","status":"DONE"},{"id":"凌群台北A2M34100174","name":"林郁珊","addr":"台北市中山區民權東路二段135巷16號六樓之4","rent":19000,"start":"2026-05-01","status":"DONE"},{"id":"租寓平台A2M30400022-2","name":"吳嘉雯","addr":"台北市士林區承德路四段40巷24號","rent":15000,"start":"2026-05-15","status":"DONE"},{"id":"租寓平台A2M30400020-2","name":"邱羿捷","addr":"台北市萬華區雙和街60號二樓","rent":12000,"start":"2026-05-16","status":"DONE"},{"id":"租寓平台A2M30400021-2","name":"潘永安","addr":"台北市北投區實踐街20號二樓","rent":19000,"start":"2026-05-15","status":"DONE"},{"id":"凌群台北A2M34100096-1","name":"蔡毓玲","addr":"台北市中正區中華路二段443巷3號一、二樓","rent":17000,"start":"2026-05-16","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群台北A2M34100102-1","name":"張毓芳","addr":"台北市大同區大龍街91巷12號十二樓之8","rent":25000,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M30500122","name":"顏煒芯","addr":"台北市大安區通化街38巷10之3號一樓","rent":10000,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100175","name":"林裕逸","addr":"台北市文山區興隆路二段252號十四樓之2","rent":19157,"start":"2026-06-01","status":"DONE"},{"id":"凌群新北B2M30500097","name":"張鳳玲","addr":"新北市板橋區莒光路86號三樓","rent":19900,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100103-1","name":"張倪禎","addr":"台北市大同區延平北路一段51號九樓之5","rent":18500,"start":"2026-06-02","status":"DONE"},{"id":"凌群新北B2M34100088-1","name":"林國泰","addr":"新北市林口區仁愛路一段256號五樓","rent":13000,"start":"2026-06-10","status":"DONE"},{"id":"凌群台北A2M30500128","name":"周予寧","addr":"台北市中正區林森南路137號五樓之2","rent":21156,"start":"2026-06-12","status":"DONE"},{"id":"租寓平台A2M30400042-1","name":"葉承寬","addr":"台北市信義區吳興街600巷96弄6號三樓","rent":23500,"start":"2026-06-15","status":"SENT"},{"id":"凌群台北A2M34100110-1","name":"許乃文","addr":"台北市萬華區中華路一段68號十三樓之2","rent":20000,"start":"2026-06-15","status":"DONE","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群新北B2M30500101","name":"魏芷榕","addr":"新北市三峽區大智路8之6號十一樓","rent":17127,"start":"2026-06-15","status":"DONE"},{"id":"凌群台北A2M30500125","name":"陳梅岑","addr":"台北市中山區新生北路二段62巷40號六樓之一","rent":21080,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500109","name":"陳韋廷","addr":"新北市中和區大仁街10巷16弄9號二樓","rent":26500,"start":"2026-06-16","status":"DONE"},{"id":"X101","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":14500,"start":"2026-07-01","status":"SENT","note":"其他費用金額不固定（依當期收據），應繳金額僅供參考"},{"id":"凌群新北B2M34100093-1","name":"陳堯暄","addr":"新北市永和區文化路90巷27弄1號","rent":20400,"start":"2026-07-07","status":"SENT"},{"id":"凌群新北B2M34100144","name":"黃孟芸","addr":"新北市蘆洲區中興街89號十四樓之三","rent":18312,"start":"2026-07-08","status":"DONE"},{"id":"凌群台北A2M34100114-1","name":"林孍","addr":"台北市大安區辛亥路一段40號五樓","rent":15500,"start":"2026-07-10","status":"SENT"},{"id":"凌群新北B2M30400171-1","name":"梁韡馨","addr":"新北市中和區景平路433號十五樓之七","rent":16504,"start":"2026-08-01","status":"SENT"},{"id":"X106","name":"呂郭玉燕","addr":"台北市信義區莊敬路423巷4弄13號二樓","rent":18000,"start":"2026-08-01","status":"SENT"},{"id":"X107","name":"劉宇翔","addr":"新北市汐止區汐萬路二段228巷31弄62號5樓","rent":15400,"start":"2026-08-01","status":"SENT"},{"id":"X108","name":"施昱丞","addr":"新北市鶯歌區湖山路28巷4號","rent":12000,"start":"2026-08-01","status":"SENT"},{"id":"X109","name":"陳宏祈","addr":"新北市蘆洲區九芎街41號四樓","rent":15000,"start":"2026-08-01","status":"NOT STARTED"},{"id":"凌群台北A2M34100125-1","name":"胡崇軒","addr":"台北市信義區松勇路53巷6號七樓","rent":16300,"start":"2026-08-01","status":"SENT"},{"id":"凌群新北B2M34100106-1","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2026-08-05","status":"SENT"},{"id":"X112","name":"葉士賢","addr":"台北市中山區錦州街262號四樓","rent":10000,"start":"2026-08-08","status":"IN PROGRESS"},{"id":"X113","name":"王禧龍","addr":"台北市北投區溫泉路37巷26號八樓之6","rent":21447,"start":"2026-08-10","status":"IN PROGRESS"},{"id":"換房客","name":"陳冠岑","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2026-08-15","status":"SENT"},{"id":"凌群新北B2M30400131-2","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2026-08-20","status":"SENT"},{"id":"凌群新北B2M34100080-1","name":"黃美玲","addr":"新北市淡水區沙崙路171號九樓","rent":17782,"start":"2026-05-01","status":"DONE"}];
 
 // 地址比對用：處理「同一個地址、不同系統打法不同」的常見差異——
 // 中文樓層數字（一二三...十）vs 阿拉伯數字、全形數字、臺/台字體差異、
@@ -4485,7 +4489,8 @@ function renderInvoicePreview(){
 /* ══════════════════════════════════════
    社宅對帳
    ── 比對邏輯說明 ──
-   1. 內建 SHEZHAI_TENANTS：房客姓名／案件地址／租金／契約起始日（其中 6 筆缺租金資料，暫無法自動比對）。
+   1. 內建 SHEZHAI_TENANTS：房客姓名／案件地址／應繳總金額／契約起始日。
+      應繳總金額＝租金＋管理費（房客負擔時）＋停車位管理費＋其他費用（房客負擔時）。
    2. 應繳日＝契約起始日的「日」，每月比照展開（若當月無此日，改當月最後一天）。
    3. 比對條件：金額相符為主（±SHE_WINDOW_DAYS 天內）；同金額多筆候選時，
       以「已比對筆數學到的轉入帳號末五碼」與「備註含房客姓名」作輔助判斷。
@@ -4615,7 +4620,7 @@ function parseSheReceiptXlsx(data){
 //    「未繳」跟「金額重複待確認」都能處理；待確認的部分若收款單的轉號後五碼
 //    剛好跟某個候選網銀入帳的末五碼相符，就直接鎖定那筆網銀入帳。
 // 2. 地址對不到房客的收款單，退回用「金額＋期間」去比對還沒解決的未繳（原本的做法）。
-function matchSheReceiptsAdvanced(unmatchedList, ambiguousList, receiptList){
+function matchSheReceiptsAdvanced(unmatchedList, ambiguousList, receiptList, dueList, matchedList, coverageMin, coverageMax){
   const receiptUsed=new Set();
   const rescued=[]; // {due, bank?, receipt, reason}
 
@@ -4658,11 +4663,41 @@ function matchSheReceiptsAdvanced(unmatchedList, ambiguousList, receiptList){
   const r2=matchSheReceipts(stillUnmatched1, remainingReceipts);
   r2.rescued.forEach(x=>rescued.push({due:x.due, receipt:x.receipt, reason:"收款單金額比對"}));
 
+  // 幫沒被用到的收款單標出具體原因，而不是只說「找不到唯一對應」
+  const matchedKeySet=new Set(matchedList.map(m=>m.due.dueKey));
+  const receiptOnly=r2.receiptOnly.map(r=>{
+    let why;
+    if(!r.tenantId){
+      why="地址對不到媒合資料中的房客，請人工核對地址";
+    }else{
+      const nearby=dueList.filter(d=>d.tenantId===r.tenantId && dateDiffDays(d.dateKey,r.dateKey)<=SHE_WINDOW_DAYS);
+      if(nearby.length===0){
+        why=`找不到「${r.tenantName}」在這個時間點附近的應繳期別（可能不在這次比對的月份範圍內）`;
+      }else{
+        const amountHit=nearby.find(d=>d.amount===r.amount);
+        if(amountHit){
+          const inCoverage=amountHit.dateKey>=coverageMin && amountHit.dateKey<=coverageMax;
+          if(!inCoverage){
+            why=`「${r.tenantName}」${amountHit.ym} 這期不在這次網銀比對的月份範圍內，之後上傳涵蓋這個月的網銀時可以再確認`;
+          }else if(matchedKeySet.has(amountHit.dueKey)){
+            why=`「${r.tenantName}」${amountHit.ym} 的租金已透過網銀直接比對成功，這筆收款單是重複登記，不影響結果`;
+          }else{
+            why=`「${r.tenantName}」${amountHit.ym} 應繳期別金額和期間都相符，但已被其他資料使用，請人工核對`;
+          }
+        }else{
+          const nearestAmt=nearby.map(d=>`${d.ym}應繳${fmtMoney(d.amount)}`).join("、");
+          why=`「${r.tenantName}」附近應繳金額對不上這筆收款單金額 ${fmtMoney(r.amount)}（${nearestAmt}），請人工核對`;
+        }
+      }
+    }
+    return{...r, why};
+  });
+
   return{
     rescued,
     stillUnmatched:r2.stillUnmatched,
     stillAmbiguous,
-    receiptOnly:r2.receiptOnly,
+    receiptOnly,
   };
 }
 
@@ -4705,29 +4740,49 @@ function matchShe(dueList, bankList){
         && dateDiffDays(due.dateKey,b.dateKey)<=SHE_WINDOW_DAYS);
   }
 
-  // 第一輪：金額+期間內唯一命中者，直接視為比對成功，並學習其末五碼
-  dueList.forEach(due=>{
-    const cands=candidatesFor(due);
-    if(cands.length===1){
-      const b=cands[0];
-      bankUsed.add(b._i);
-      matched.push({due, bank:b, reason:"金額＋期間唯一命中"});
-      const last5=b.last5||b.partnerLast5;
-      if(last5) tenantLast5[due.tenantId]=last5;
-    }
-  });
+  // 先算出「整份應繳排程」裡，每一筆入帳原始被幾個應繳項目視為候選（不管之後有沒有被搶走），
+  // 只要有 2 個以上想要，這筆入帳就標記為「有爭議」，之後不管在哪個階段，
+  // 都不會被貪心地自動判定，一定要留給末五碼／備註姓名，或最後留給人工／收款單確認。
+  // 這是為了避免「剛好兩位房客本期應繳金額相同」時，被誤判給先處理到的那位。
+  const contestedBankIdx=(()=>{
+    const wantCount=new Map();
+    dueList.forEach(due=>{
+      bankList.forEach((b,i)=>{
+        if(b.amount===due.amount && dateDiffDays(due.dateKey,b.dateKey)<=SHE_WINDOW_DAYS){
+          wantCount.set(i, (wantCount.get(i)||0)+1);
+        }
+      });
+    });
+    return new Set([...wantCount.entries()].filter(([,v])=>v>1).map(([i])=>i));
+  })();
 
-  // 第二輪：處理其餘（0 筆＝未繳；多筆＝以末五碼／備註輔助判斷）
-  dueList.forEach(due=>{
-    if(matched.some(m=>m.due===due)) return;
+  // 第一輪：反覆找出「金額+期間內唯一候選，而且這筆入帳沒有爭議」的安全命中，直到沒有新的為止
+  let pending=dueList.slice();
+  let changed=true;
+  while(changed){
+    changed=false;
+    const stillPending=[];
+    pending.forEach(due=>{
+      const cands=candidatesFor(due);
+      if(cands.length===0){ unmatched.push(due); changed=true; return; }
+      if(cands.length===1 && !contestedBankIdx.has(cands[0]._i)){
+        const b=cands[0];
+        bankUsed.add(b._i);
+        matched.push({due, bank:b, reason:"金額＋期間唯一命中"});
+        const last5=b.last5||b.partnerLast5;
+        if(last5) tenantLast5[due.tenantId]=last5;
+        changed=true;
+        return;
+      }
+      stillPending.push(due);
+    });
+    pending=stillPending;
+  }
+
+  // 第二輪：處理剩下有爭議或多候選的（用末五碼／備註姓名輔助判斷，還是不行就留待確認）
+  pending.forEach(due=>{
     const cands=candidatesFor(due);
     if(cands.length===0){ unmatched.push(due); return; }
-    if(cands.length===1){
-      const b=cands[0];
-      bankUsed.add(b._i);
-      matched.push({due, bank:b, reason:"金額＋期間唯一命中"});
-      return;
-    }
     // 多筆候選：先用已學習的末五碼，其次用備註含房客姓名
     const knownLast5=tenantLast5[due.tenantId];
     let picked=null, reason="";
@@ -4745,7 +4800,9 @@ function matchShe(dueList, bankList){
       bankUsed.add(picked._i);
       matched.push({due, bank:picked, reason});
     }else{
-      ambiguous.push({due, candidates:cands});
+      // 有爭議、又沒有末五碼/備註可以佐證的候選，標記 contested，
+      // 讓後續「連鎖解算」不會因為只剩一筆候選就自動判定，改成留給人工或收款單確認。
+      ambiguous.push({due, candidates:cands.map(c=>({...c, contested:contestedBankIdx.has(c._i)}))});
     }
   });
 
@@ -4760,7 +4817,9 @@ let sheState={
   rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[], rawReceiptOnly:[],
   // 套用人工確認後、實際顯示用的結果
   allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], allReceiptOnly:[],
-  manualResolutions:{}, // dueKey -> {action:'confirm', bankIdx} | {action:'unpaid'}
+  manualResolutions:{}, // dueKey -> {action:'confirm', bankIdx} | {action:'unpaid'}（金額重複待確認用）
+  manualBankLink:{},    // dueKey -> bank._bidx（把「網銀存入但無對應房客」手動核對到某個未繳/待確認期別）
+  manualReceiptLink:{}, // dueKey -> receipt._ridx（把「收款單登記但對不上」手動核對到某個未繳/待確認期別）
   rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null,
 };
 
@@ -4775,6 +4834,8 @@ function sheSaveState(){
       rawAmbiguous:sheState.rawAmbiguous, rawBankOnly:sheState.rawBankOnly,
       rawReceiptOnly:sheState.rawReceiptOnly,
       manualResolutions:sheState.manualResolutions,
+      manualBankLink:sheState.manualBankLink,
+      manualReceiptLink:sheState.manualReceiptLink,
       rangeStr:sheState.rangeStr, selectedYm:sheState.selectedYm,
       bankMinKey:sheState.bankMinKey, bankMaxKey:sheState.bankMaxKey,
       savedAt:new Date().toISOString(),
@@ -4831,7 +4892,7 @@ function sheApplyResolutions(){
         changed=true;
         return;
       }
-      if(remain.length===1){
+      if(remain.length===1 && !remain[0].contested){
         matched.push({due:item.due, bank:remain[0], reason:"金額＋期間唯一命中（排除已認領項目後）"});
         usedBankIdx.add(remain[0]._bidx);
         changed=true;
@@ -4845,8 +4906,71 @@ function sheApplyResolutions(){
   sheState.allMatched=matched;
   sheState.allUnmatched=unmatched;
   sheState.allAmbiguous=pending;
-  sheState.allBankOnly=sheState.rawBankOnly.filter(b=>!usedBankIdx.has(b._bidx));
-  sheState.allReceiptOnly=sheState.rawReceiptOnly;
+  let bankOnly=sheState.rawBankOnly.filter(b=>!usedBankIdx.has(b._bidx));
+  let receiptOnly=sheState.rawReceiptOnly.slice();
+
+  // ── 人工核對：把「網銀存入但無對應房客」／「收款單登記但對不上」
+  //    直接指定給某個未繳或待確認期別（不需要金額/日期剛好落在自動比對的窗口內）──
+  function pullDueByKey(dueKey){
+    let idx=unmatched.findIndex(d=>d.dueKey===dueKey);
+    if(idx>=0) return unmatched.splice(idx,1)[0];
+    idx=pending.findIndex(a=>a.due.dueKey===dueKey);
+    if(idx>=0) return pending.splice(idx,1)[0].due;
+    return null;
+  }
+
+  Object.entries(sheState.manualBankLink).forEach(([dueKey,bidx])=>{
+    const bi=bankOnly.findIndex(b=>b._bidx===bidx);
+    if(bi<0){ delete sheState.manualBankLink[dueKey]; return; } // 這筆網銀已經被別的方式用掉了，決定失效
+    const due=pullDueByKey(dueKey);
+    if(!due){ delete sheState.manualBankLink[dueKey]; return; } // 這個期別已經被別的方式解決了，決定失效
+    const bank=bankOnly.splice(bi,1)[0];
+    matched.push({due, bank, reason:"人工核對（網銀存入）"});
+  });
+
+  Object.entries(sheState.manualReceiptLink).forEach(([dueKey,ridx])=>{
+    const ri=receiptOnly.findIndex(r=>r._ridx===ridx);
+    if(ri<0){ delete sheState.manualReceiptLink[dueKey]; return; }
+    const due=pullDueByKey(dueKey);
+    if(!due){ delete sheState.manualReceiptLink[dueKey]; return; }
+    const receipt=receiptOnly.splice(ri,1)[0];
+    matched.push({
+      due,
+      bank:{dateKey:receipt.dateKey, amount:receipt.amount, note:"（收款單）"+receipt.detail, last5:receipt.last5, partnerLast5:null, _bidx:"receipt_"+receipt._ridx},
+      reason:"人工核對（收款單）",
+    });
+  });
+
+  sheState.allMatched=matched;
+  sheState.allUnmatched=unmatched;
+  sheState.allAmbiguous=pending;
+  sheState.allBankOnly=bankOnly;
+  sheState.allReceiptOnly=receiptOnly;
+}
+
+function sheLinkBankToDue(dueKey, bidx){
+  sheState.manualBankLink[dueKey]=bidx;
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
+}
+function sheUndoBankLink(dueKey){
+  delete sheState.manualBankLink[dueKey];
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
+}
+function sheLinkReceiptToDue(dueKey, ridx){
+  sheState.manualReceiptLink[dueKey]=ridx;
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
+}
+function sheUndoReceiptLink(dueKey){
+  delete sheState.manualReceiptLink[dueKey];
+  sheApplyResolutions();
+  renderSheResult();
+  sheSaveState();
 }
 
 function sheResolveAmbiguous(dueKey, action, bankIdx){
@@ -4863,14 +4987,16 @@ function sheUndoResolution(dueKey){
   sheSaveState();
 }
 
-// 依「應繳月份」重建下拉選單選項（只列出網銀真正涵蓋日期範圍內的月份，緩衝區產生的月份不列入選單）
+// 依「應繳月份」重建下拉選單選項。
+// 未繳／待確認本來就只會落在網銀實際涵蓋的範圍內（已在比對時處理過），
+// 但「比對成功」不受此限——房客提早繳（例如8月初到期、7月底就繳了）也算成功比對，
+// 所以月份選單改成「只要這個月有任何紀錄（成功/未繳/待確認皆算）」就列出，
+// 才不會讓提早繳的紀錄因為月份選單沒列出來而被忽略。
 function sheBuildMonthOptions(){
-  const inRange=dk=>sheState.bankMinKey==null||sheState.bankMaxKey==null
-    ||(dk>=sheState.bankMinKey && dk<=sheState.bankMaxKey);
   const yms=new Set();
-  sheState.rawMatched.forEach(m=>{ if(inRange(m.due.dateKey)) yms.add(m.due.ym); });
-  sheState.rawUnmatched.forEach(d=>{ if(inRange(d.dateKey)) yms.add(d.ym); });
-  sheState.rawAmbiguous.forEach(a=>{ if(inRange(a.due.dateKey)) yms.add(a.due.ym); });
+  sheState.rawMatched.forEach(m=>yms.add(m.due.ym));
+  sheState.rawUnmatched.forEach(d=>yms.add(d.ym));
+  sheState.rawAmbiguous.forEach(a=>yms.add(a.due.ym));
   const sorted=[...yms].sort().reverse(); // 新到舊
   const sel=document.getElementById("she-month-select");
   sel.innerHTML="";
@@ -4936,13 +5062,14 @@ document.getElementById("she-btn-match").addEventListener("click",()=>{
   const dueList=buildSheSchedule(fromKey, untilKey);
   const res=matchShe(dueList, bank.slice());
 
-  // 未繳名單只顯示「落在網銀實際涵蓋日期內、且已到應繳日」者
-  // （fromKey/untilKey 有留緩衝天數是為了比對用，但未繳的認定要以網銀真正涵蓋的範圍為準，
-  //   避免網銀還沒涵蓋到的月份被誤判成未繳）
+  // 「未繳」代表完全沒有任何入帳資料可以佐證，才需要嚴格限制在網銀真正涵蓋的範圍內，
+  // 避免網銀還沒涵蓋到的月份被誤判成未繳。
+  // 「待確認」不一樣：待確認代表已經有一筆真實入帳存在，只是歸屬還沒確定，
+  // 對帳人來說「有入帳」本身就是重要資訊，不該因為應繳日剛好落在這次網銀範圍外就被藏起來
+  // ——尤其是像「兩位房客金額剛好相同」這種跨月份爭議的情況，藏起來反而會讓其中一位完全消失、
+  // 沒辦法核對到正確的人。所以待確認清單不做日期範圍限制。
   res.unmatched=res.unmatched.filter(d=>
     d.dateKey>=bankMinKey && d.dateKey<=Math.min(todayKey,bankMaxKey));
-  res.ambiguous=res.ambiguous.filter(a=>
-    a.due.dateKey>=bankMinKey && a.due.dateKey<=Math.min(todayKey,bankMaxKey));
 
   let finalMatched=res.matched;
   let finalUnmatched=res.unmatched;
@@ -4952,7 +5079,7 @@ document.getElementById("she-btn-match").addEventListener("click",()=>{
   // 第二輪：用收款單救回網銀查不到的已繳紀錄（如現金/郵局匯款），
   // 收款單地址若能對到房客身份，也能幫忙解開「金額重複待確認」。
   if(sheState.receipt && sheState.receipt.length){
-    const r2=matchSheReceiptsAdvanced(res.unmatched, res.ambiguous, sheState.receipt.slice());
+    const r2=matchSheReceiptsAdvanced(res.unmatched, res.ambiguous, sheState.receipt.slice(), dueList, res.matched, bankMinKey, Math.min(todayKey,bankMaxKey));
     finalUnmatched=r2.stillUnmatched;
     finalAmbiguous=r2.stillAmbiguous;
     finalMatched=res.matched.concat(r2.rescued.map(x=>{
@@ -4991,7 +5118,8 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   sheState={bank:null, fileName:null, receipt:null, receiptFileName:null,
     rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[], rawReceiptOnly:[],
     allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], allReceiptOnly:[],
-    manualResolutions:{}, rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
+    manualResolutions:{}, manualBankLink:{}, manualReceiptLink:{},
+    rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
   sheClearStorage();
   document.getElementById("she-upload").hidden=false;
   document.getElementById("she-result").hidden=true;
@@ -5021,6 +5149,8 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   sheState.rawBankOnly=saved.rawBankOnly||[];
   sheState.rawReceiptOnly=saved.rawReceiptOnly||[];
   sheState.manualResolutions=saved.manualResolutions||{};
+  sheState.manualBankLink=saved.manualBankLink||{};
+  sheState.manualReceiptLink=saved.manualReceiptLink||{};
   sheState.rangeStr=saved.rangeStr;
   sheState.selectedYm=saved.selectedYm||"";
   sheState.bankMinKey=saved.bankMinKey;
@@ -5139,7 +5269,10 @@ function renderSheResult(){
     .sort((a,b)=>a.due.dateKey-b.due.dateKey)
     .forEach((item,i)=>{
       const d=item.due, b=item.bank;
-      const isManual=item.reason==="人工確認";
+      const undoKind=item.reason==="人工確認"?"resolve"
+        :item.reason==="人工核對（網銀存入）"?"bank"
+        :item.reason==="人工核對（收款單）"?"receipt"
+        :null;
       const tr=document.createElement("tr");
       tr.className="matched";
       tr.innerHTML=`
@@ -5153,7 +5286,7 @@ function renderSheResult(){
         <td class="mono right">${fmtMoney(b.amount)}</td>
         <td class="mono">${b.last5||b.partnerLast5||"—"}</td>
         <td><span class="tag ok">${item.reason}</span></td>
-        <td>${isManual?`<button class="btn ghost she-undo-btn" data-duekey="${d.dueKey}" style="padding:3px 8px;font-size:11px;">↩ 撤銷</button>`:"—"}</td>
+        <td>${undoKind?`<button class="btn ghost she-undo-btn" data-kind="${undoKind}" data-duekey="${d.dueKey}" style="padding:3px 8px;font-size:11px;">↩ 撤銷</button>`:"—"}</td>
       `;
       tbM.appendChild(tr);
     });
@@ -5161,8 +5294,31 @@ function renderSheResult(){
     tbM.innerHTML=`<tr><td colspan="11" style="color:var(--ink-faint);text-align:center;padding:16px;">無比對成功筆數</td></tr>`;
   }
   tbM.querySelectorAll(".she-undo-btn").forEach(btn=>{
-    btn.addEventListener("click",()=>sheUndoResolution(btn.dataset.duekey));
+    const kind=btn.dataset.kind;
+    if(kind==="bank") btn.addEventListener("click",()=>sheUndoBankLink(btn.dataset.duekey));
+    else if(kind==="receipt") btn.addEventListener("click",()=>sheUndoReceiptLink(btn.dataset.duekey));
+    else btn.addEventListener("click",()=>sheUndoResolution(btn.dataset.duekey));
   });
+
+  // ── 手動核對用：組出「目前未繳／待確認」的期別清單給下拉選單選，金額相符的排前面 ──
+  function sheDueOptionsHtml(amount){
+    const pool=[
+      ...sheState.allUnmatched.map(d=>({due:d})),
+      ...sheState.allAmbiguous.map(a=>({due:a.due})),
+    ];
+    const opts=pool
+      .sort((a,b)=>{
+        const aHit=a.due.amount===amount?0:1, bHit=b.due.amount===amount?0:1;
+        if(aHit!==bHit) return aHit-bHit;
+        return a.due.dateKey-b.due.dateKey;
+      })
+      .map(x=>{
+        const d=x.due;
+        const mark=d.amount===amount?"★ ":"";
+        return `<option value="${d.dueKey}">${mark}${d.name}／${d.ym}／${fmtMoney(d.amount)}</option>`;
+      }).join("");
+    return `<option value="">請選擇房客期別…</option>`+opts;
+  }
 
   // ── 網銀存入但無對應房客 ──
   const tbB=document.getElementById("she-tb-bankonly");
@@ -5178,12 +5334,25 @@ function renderSheResult(){
       <td class="mono">${b.last5||"—"}</td>
       <td class="mono">${b.partnerLast5||"—"}</td>
       <td>${b.noteTenantName?`<span class="tag warn">${b.noteTenantName}</span>`:"—"}</td>
+      <td style="white-space:normal;min-width:220px;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <select class="she-link-select" data-kind="bank" data-bidx="${b._bidx}" style="max-width:170px;">${sheDueOptionsHtml(b.amount)}</select>
+          <button class="btn secondary she-link-btn" data-kind="bank" data-bidx="${b._bidx}" style="padding:3px 9px;font-size:11px;white-space:nowrap;">核對</button>
+        </div>
+      </td>
     `;
     tbB.appendChild(tr);
   });
   if(!bankOnly.length){
-    tbB.innerHTML=`<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:16px;">無剩餘未對應網銀入帳</td></tr>`;
+    tbB.innerHTML=`<tr><td colspan="8" style="color:var(--ink-faint);text-align:center;padding:16px;">無剩餘未對應網銀入帳</td></tr>`;
   }
+  tbB.querySelectorAll(".she-link-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const sel=btn.parentElement.querySelector(".she-link-select");
+      if(!sel.value) return;
+      sheLinkBankToDue(sel.value, Number(btn.dataset.bidx));
+    });
+  });
 
   // ── 收款單登記但找不到對應期別（只有上傳收款單時才顯示這區塊）──
   const hasReceipt=!!(sheState.receipt && sheState.receipt.length);
@@ -5193,6 +5362,8 @@ function renderSheResult(){
     const tbR=document.getElementById("she-tb-receiptonly");
     tbR.innerHTML="";
     receiptOnly.forEach((r,i)=>{
+      const isNormal=r.why&&(r.why.includes("已透過網銀直接比對成功")||r.why.includes("不在這次網銀比對的月份範圍內"));
+      const tagCls=isNormal?"grey":"warn";
       const tr=document.createElement("tr");
       tr.className="bank-only";
       tr.innerHTML=`
@@ -5201,22 +5372,45 @@ function renderSheResult(){
         <td class="mono">${rocStr(r.dateKey)}</td>
         <td class="mono right">${fmtMoney(r.amount)}</td>
         <td class="mono">${r.last5||"—"}</td>
-        <td style="white-space:normal;max-width:320px;">${r.detail||"—"}</td>
+        <td style="white-space:normal;max-width:280px;">${r.detail||"—"}</td>
+        <td style="white-space:normal;min-width:260px;"><span class="tag ${tagCls}">${r.why||"—"}</span></td>
+        <td style="white-space:normal;min-width:220px;">
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select class="she-link-select" data-kind="receipt" data-ridx="${r._ridx}" style="max-width:170px;">${sheDueOptionsHtml(r.amount)}</select>
+            <button class="btn secondary she-link-btn" data-kind="receipt" data-ridx="${r._ridx}" style="padding:3px 9px;font-size:11px;white-space:nowrap;">核對</button>
+          </div>
+        </td>
       `;
       tbR.appendChild(tr);
     });
     if(!receiptOnly.length){
-      tbR.innerHTML=`<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:16px;">收款單都已對應到期別，或這個月份沒有收款單資料</td></tr>`;
+      tbR.innerHTML=`<tr><td colspan="8" style="color:var(--ink-faint);text-align:center;padding:16px;">收款單都已對應到期別，或這個月份沒有收款單資料</td></tr>`;
     }
+    tbR.querySelectorAll(".she-link-btn").forEach(btn=>{
+      btn.addEventListener("click",()=>{
+        const sel=btn.parentElement.querySelector(".she-link-select");
+        if(!sel.value) return;
+        sheLinkReceiptToDue(sel.value, Number(btn.dataset.ridx));
+      });
+    });
   }
 
-  // ── 缺租金資料提醒 ──
+  // ── 缺租金資料／金額不固定 提醒 ──
   const norent=SHEZHAI_TENANTS.filter(t=>t.rent==null);
+  const variableFee=SHEZHAI_TENANTS.filter(t=>t.note);
   const norentEl=document.getElementById("she-norent-hint");
+  const hints=[];
   if(norent.length){
+    hints.push(`⚠ 內建媒合資料中有 <strong>${norent.length}</strong> 位房客缺少應繳金額，暫無法自動比對，請人工確認：`+
+      norent.map(t=>`${t.name}（${t.addr}）`).join("、"));
+  }
+  if(variableFee.length){
+    hints.push(`ℹ️ 以下 <strong>${variableFee.length}</strong> 位房客有「依當期費用」等不固定的其他費用，系統計算的應繳金額僅供參考、可能跟實際入帳有落差：`+
+      variableFee.map(t=>`${t.name}（${t.addr}）`).join("、"));
+  }
+  if(hints.length){
     norentEl.style.display="block";
-    norentEl.innerHTML=`⚠ 內建媒合資料中有 <strong>${norent.length}</strong> 位房客缺少租金金額，暫無法自動比對，請人工確認：`+
-      norent.map(t=>`${t.name}（${t.addr}）`).join("、");
+    norentEl.innerHTML=hints.join("<br><br>");
   }else{
     norentEl.style.display="none";
   }

@@ -899,7 +899,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <table>
           <thead><tr>
             <th>#</th><th>入帳日期</th><th class="right">入帳金額</th>
-            <th>備註</th><th>虛擬帳號末五碼</th><th>對手末五碼</th>
+            <th>備註</th><th>虛擬帳號末五碼</th><th>對手末五碼</th><th>備註疑似房客</th>
           </tr></thead>
           <tbody id="she-tb-bankonly"></tbody>
         </table>
@@ -1011,8 +1011,9 @@ const HOUSING_DATA = [{"code":"AH1150705","name":"成都159","aliases":[],"servi
 
 const SHEZHAI_TENANTS = [{"id":"凌群新北B2M34100106","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2025-08-05","status":"DONE"},{"id":"凌群台北A2M34100129","name":"鄧勝哲","addr":"台北市中山區錦州街262號四樓","rent":10000,"start":"2025-08-08","status":"DONE"},{"id":"凌群台北A2M34100138","name":"葉士賢","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2025-08-15","status":"DONE"},{"id":"凌群新北B2M30400131-1","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2025-08-20","status":"DONE"},{"id":"租寓平台A2M30400043","name":"黃晟恩","addr":"台北市南港區成福路168號三樓之6","rent":17000,"start":"2025-07-10","status":"DONE"},{"id":"凌群台北A2M34100143","name":"彭羽慈","addr":"台北市中正區漢口街一段110號八樓之12","rent":26000,"start":"2025-09-01","status":"DONE"},{"id":"租寓平台A2M30400047","name":"劉繼仁","addr":"台北市中山區錦州街30巷11號七樓之26","rent":12000,"start":"2026-03-15","status":"DONE"},{"id":"租寓平台A2M30400037-1","name":"鄧乃綺","addr":"台北市信義區吳興街34巷1號三樓之1","rent":19900,"start":"2025-09-05","status":"DONE"},{"id":"凌群新北B2M30400177","name":"蕭睆珍","addr":"新北市新店區中央路175號七樓之2","rent":16000,"start":"2025-09-05","status":"DONE"},{"id":"租寓平台A2M30400035-1","name":"林若喬","addr":"台北市信義區莊敬路423巷4弄13號三樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400033-1","name":"周蔡莎娜","addr":"台北市信義區莊敬路423巷4弄13號四樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400036-1","name":"胡崇胤","addr":"台北市信義區莊敬路423巷4弄13號","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"凌群新北B2M30400176","name":"陳淑玫","addr":"新北市板橋區雙十路二段98號三樓","rent":19900,"start":"2025-09-15","status":"DONE"},{"id":"凌群新北B2M34100122","name":"莊峰源","addr":"新北市永和區福和路236號二樓","rent":19900,"start":"2025-10-01","status":"DONE"},{"id":"租寓平台A2M30400002-2","name":"朱容瑩","addr":"台北市南港區研究院路二段197巷21號三樓","rent":16000,"start":"2025-10-01","status":"DONE"},{"id":"凌群新北B2M30500001","name":"江廷安","addr":"新北市淡水區八勢一街63巷42號七樓","rent":17000,"start":"2025-10-10","status":"DONE"},{"id":"凌群臺北A2M30500004","name":"林大宏","addr":"台北市信義區莊敬路423巷4弄15號四樓","rent":19000,"start":"2025-10-10","status":"DONE"},{"id":"凌群台北A2M34100003-1","name":"陳信助","addr":"台北市士林區中正路399巷18號二樓","rent":16000,"start":"2025-10-12","status":"DONE"},{"id":"凌群台北A2M34100007-1","name":"李仙娥","addr":"台北市萬華區艋舺大道420號四樓","rent":19500,"start":"2025-10-16","status":"DONE"},{"id":"租寓平台A2M30400041","name":"曾沛玲","addr":"台北市中正區羅斯福路二段150號五樓","rent":16800,"start":"2025-03-10","status":"DONE"},{"id":"租寓平台A2M30400005-2","name":"王亭媗","addr":"台北市萬華區雙和街58號三樓","rent":15000,"start":"2025-10-18","status":"DONE"},{"id":"租寓平台A2M30400040","name":"朱軒穎","addr":"台北市中山區民生東路一段48號八樓之4","rent":17700,"start":"2024-12-05","status":"DONE"},{"id":"凌群臺北A2M30500008","name":"莊侑勳","addr":"台北市萬華區西藏路125巷13號二樓之1","rent":30000,"start":"2025-10-30","status":"DONE"},{"id":"凌群臺北A2M30500009","name":"陳貞文","addr":"台北市松山區八德路四段72巷16弄14號四樓","rent":23000,"start":"2025-10-31","status":"DONE"},{"id":"凌群臺北A2M30500014","name":"張益文","addr":"台北市信義區大道路137號一樓","rent":31200,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500013","name":"陳敬仁","addr":"台北市中山區中山北路二段65巷17之1號四樓","rent":26000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M30500009","name":"林淑美","addr":"新北市淡水區竿蓁二街19巷12之1號十一樓","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500011","name":"王得翰","addr":"台北市萬華區環河南路二段147號八樓之1","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群台北A2M34100011-1","name":"葉倩宇","addr":"台北市萬華區成都路139號三樓之3","rent":25000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M34100015-1","name":"徐智薇","addr":"新北市中和區中正路602號五樓","rent":17000,"start":"2025-11-15","status":"DONE"},{"id":"租寓平台A2M30400007-2","name":"陳珠英","addr":"台北市萬華區萬大路137巷18號二樓","rent":15000,"start":"2025-11-15","status":"DONE"},{"id":"凌群臺北A2M30500023","name":"廖紫伶","addr":"臺北市大同區大龍街10號二樓","rent":23000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100154","name":"汪詩融","addr":"台北市中山區德惠街34號七樓之27","rent":13000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100056-1","name":"邱鈺佩","addr":"台北市士林區士東路266巷12弄7號五樓","rent":26000,"start":"2026-02-15","status":"DONE"},{"id":"凌群台北A2M34100014-1","name":"易夢姍","addr":"台北市中山區龍江路408號四樓","rent":15000,"start":"2025-11-20","status":"DONE"},{"id":"凌群台北A2M34100045-1","name":"刁袣幗","addr":"台北市萬華區西昌街142號七樓之2","rent":25000,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100019-1","name":"高健利","addr":"新北市土城區中央路四段58之1號二樓","rent":23000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100015-1","name":"楊佩容","addr":"台北市中山區龍江路410號四樓","rent":15000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100013-1","name":"蘇俊青","addr":"台北市大安區復興南路一段126巷1號五樓之7","rent":19800,"start":"2025-11-25","status":"DONE"},{"id":"凌群臺北A2M30500031","name":"張貽鈞","addr":"台北市北投區天母北路105巷15弄1號七樓之5","rent":13500,"start":"2025-12-01","status":"DONE"},{"id":"租寓平台A2M30400008-2","name":"陳聖淦","addr":"台北市萬華區青年路152巷31號四樓","rent":11000,"start":"2025-12-01","status":"DONE"},{"id":"凌群新北B2M30500023","name":"江曉雯","addr":"新北市板橋區南雅東路21號三樓","rent":10000,"start":"2025-12-01","status":"DONE"},{"id":"凌群臺北A2M30500029","name":"王佳玉","addr":"台北市大同區延平北路四段93之2號四樓","rent":25000,"start":"2025-12-05","status":"DONE"},{"id":"凌群臺北A2M30500035","name":"薛里華","addr":"台北市內湖區內湖路二段103巷92弄10號五樓之2","rent":24000,"start":"2025-12-05","status":"DONE"},{"id":"凌群新北B2M30500032","name":"江嘉偉","addr":"新北市淡水區竿蓁二街19巷8之1號三樓","rent":16100,"start":"2025-12-10","status":"DONE"},{"id":"凌群新北B2M30500035","name":"黃文凌","addr":"新北市板橋區民生路三段281巷2弄11號五樓","rent":19900,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100020-1","name":"吳珮嫙","addr":"台北市中山區新生北路二段70號七樓之7","rent":23000,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100023-1","name":"馬志朋","addr":"台北市中山區南京東路三段48巷38號十一樓之1","rent":19500,"start":"2025-12-15","status":"DONE"},{"id":"凌群台北A2M34100024-1","name":"王愛玉","addr":"台北市萬華區西昌街142號七樓之1","rent":12000,"start":"2025-12-17","status":"DONE"},{"id":"凌群台北A2M34100026-1","name":"郭子賢","addr":"台北市大同區延平北路四段117號三樓","rent":15000,"start":"2025-12-18","status":"DONE"},{"id":"凌群新北B2M30500039","name":"李耀宗","addr":"新北市三重區中正南路250巷11號二十七樓","rent":19900,"start":"2026-01-01","status":"DONE"},{"id":"凌群臺北A2M30500058","name":"陳捷","addr":"台北市士林區中山北路六段152號四樓之2","rent":19500,"start":"2026-01-01","status":"DONE"},{"id":"凌群台北A2M34100036-1","name":"李芳瑜","addr":"台北市大同區民生西路171巷3號十四樓之1","rent":14000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100042-1","name":"高如玟","addr":"台北市中山區松江路28號九樓","rent":18000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100037-1","name":"莊富安","addr":"台北市中正區臨沂街61巷20號一樓","rent":15000,"start":"2026-01-15","status":"DONE"},{"id":"凌群新北B2M30500043","name":"王慧芝","addr":"新北市板橋區國慶路195號七樓","rent":28000,"start":"2026-01-16","status":"DONE"},{"id":"凌群台北A2M34100047-1","name":"林國聯","addr":"台北市內湖區潭美街89號一樓、二樓","rent":14500,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100042-1","name":"曾瓊玉","addr":"新北市板橋區光武街36巷6號五樓","rent":19900,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100053-1","name":"王以太","addr":"台北市萬華區萬大路137巷37號五樓","rent":19000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100051-1","name":"李芷菁","addr":"台北市中山區錦州街30巷11號七樓之6","rent":7500,"start":"2026-02-01","status":"DONE"},{"id":"凌群臺北A2M30500064","name":"廖炫雄","addr":"台北市萬華區東園街154巷9弄22號一樓","rent":16000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100164","name":"林顯聖","addr":"台北市萬華區西園路一段57號二樓","rent":27000,"start":"2026-02-01","status":"DONE"},{"id":"凌群新北B2M34100044-1","name":"林冠彣","addr":"新北市淡水區中山北路一段180巷8號三樓","rent":16000,"start":"2026-02-05","status":"DONE"},{"id":"租寓平台A2M30400009-1","name":"施中涵","addr":"台北市士林區社子街97巷13號二樓","rent":17000,"start":"2025-02-10","status":"DONE"},{"id":"凌群新北B2M30500057","name":"鍾易政","addr":"新北市板橋區南雅東路15號三樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"租寓平台A2M30400010-2","name":"連絹蓉","addr":"台北市士林區基河路40號十一樓之6","rent":15700,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M30400153-1","name":"鄧奕辰","addr":"新北市永和區仁愛路352巷134號二樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"凌群臺北A2M30500077","name":"林鍾秀麗","addr":"台北市北投區大同街200巷3號三樓","rent":23500,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M34100040-1","name":"孫苑綾","addr":"新北市新莊區昌平街71巷19號十四樓","rent":22000,"start":"2026-03-01","status":"DONE"},{"id":"凌群台北A2M34100066-1","name":"游芬彩","addr":"台北市南港區南深路9號三樓","rent":19900,"start":"2026-03-05","status":"DONE"},{"id":"凌群台北A2M34100079-1","name":"吳仙英","addr":"台北市中正區中華路二段443巷1號一樓、二樓","rent":17000,"start":"2026-04-01","status":"DONE"},{"id":"租寓平台A2M30400011-2","name":"容毓雅","addr":"台北市南港區南深路33之4號","rent":16000,"start":"2026-03-26","status":"DONE"},{"id":"凌群台北A2M34100065-1","name":"宮敏","addr":"台北市中山區中原街22號五樓之8","rent":19900,"start":"2026-04-01","status":"DONE"},{"id":"凌群台北A2M30500090","name":"黃毅強","addr":"台北市中山區新生北路三段1號十樓之12","rent":16000,"start":"2026-04-01","status":"DONE"},{"id":"凌群新北B2M30500071","name":"謝宜勳","addr":"新北市汐止區茄苳路325號四樓","rent":19900,"start":"2026-04-04","status":"DONE"},{"id":"凌群新北B2M30500076","name":"賴聲聞","addr":"新北市新莊區中誠街38號四樓","rent":23000,"start":"2026-04-14","status":"DONE"},{"id":"凌群新北B2M34100062-1","name":"蘇詩涵","addr":"新北市板橋區民生路二段32號二樓","rent":19900,"start":"2026-04-15","status":"DONE"},{"id":"凌群新北B2M30500075","name":"游皓翔","addr":"新北市汐止區新昌路5號二樓","rent":28500,"start":"2026-04-15","status":"DONE"},{"id":"凌群台北A2M30500094","name":"林哲安","addr":"台北市中山區新生北路二段108號六樓之19","rent":12000,"start":"2026-04-20","status":"DONE"},{"id":"凌群臺北A2M30500112","name":"吳思鴻","addr":"台北市信義區大道路137之1號五樓","rent":19900,"start":"2026-05-01","status":"DONE"},{"id":"凌群台北A2M34100174","name":"林郁珊","addr":"台北市中山區民權東路二段135巷16號六樓之4","rent":18000,"start":"2026-05-01","status":"DONE"},{"id":"租寓平台A2M30400022-2","name":"吳嘉雯","addr":"台北市士林區承德路四段40巷24號","rent":15000,"start":"2026-05-15","status":"DONE"},{"id":"租寓平台A2M30400020-2","name":"邱羿捷","addr":"台北市萬華區雙和街60號二樓","rent":12000,"start":"2026-05-16","status":"DONE"},{"id":"租寓平台A2M30400021-2","name":"潘永安","addr":"台北市北投區實踐街20號二樓","rent":19000,"start":"2026-05-15","status":"DONE"},{"id":"凌群台北A2M34100096-1","name":"蔡毓玲","addr":"台北市中正區中華路二段443巷3號一、二樓","rent":17000,"start":"2026-05-16","status":"DONE"},{"id":"凌群台北A2M34100102-1","name":"張毓芳","addr":"台北市大同區大龍街91巷12號十二樓之8","rent":23500,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M30500122","name":"顏煒芯","addr":"台北市大安區通化街38巷10之3號一樓","rent":10000,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100175","name":"林裕逸","addr":"台北市文山區興隆路二段252號十四樓之2","rent":18000,"start":"2026-06-01","status":"DONE"},{"id":"凌群新北B2M30500097","name":"張鳳玲","addr":"新北市板橋區莒光路86號三樓","rent":19900,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100103-1","name":"張倪禎","addr":"台北市大同區延平北路一段51號九樓之5","rent":17800,"start":"2026-06-02","status":"DONE"},{"id":"凌群新北B2M34100088-1","name":"林國泰","addr":"新北市林口區仁愛路一段256號五樓","rent":13000,"start":"2026-06-10","status":"DONE"},{"id":"凌群台北A2M30500128","name":"周予寧","addr":"台北市中正區林森南路137號五樓之2","rent":19700,"start":"2026-06-12","status":"DONE"},{"id":"租寓平台A2M30400042-1","name":"葉承寬","addr":"台北市信義區吳興街600巷96弄6號三樓","rent":23500,"start":"2026-06-15","status":"SENT"},{"id":"凌群台北A2M34100110-1","name":"許乃文","addr":"台北市萬華區中華路一段68號十三樓之2","rent":19000,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500101","name":"魏芷榕","addr":"新北市三峽區大智路8之6號十一樓","rent":16000,"start":"2026-06-15","status":"DONE"},{"id":"凌群台北A2M30500125","name":"陳梅岑","addr":"台北市中山區新生北路二段62巷40號六樓之一","rent":19900,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500109","name":"陳韋廷","addr":"新北市中和區大仁街10巷16弄9號二樓","rent":26500,"start":"2026-06-16","status":"DONE"},{"id":"X097","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":14500,"start":"2026-08-10","status":"SENT"},{"id":"凌群新北B2M34100093-1","name":"陳堯暄","addr":"新北市永和區文化路90巷27弄1號","rent":19900,"start":"2026-07-07","status":"SENT"},{"id":"凌群新北B2M34100144","name":"黃孟芸","addr":"新北市蘆洲區中興街89號十四樓之三","rent":15000,"start":"2026-07-08","status":"DONE"},{"id":"凌群台北A2M34100114-1","name":"林孍","addr":"台北市大安區辛亥路一段40號五樓","rent":15000,"start":"2026-07-10","status":"SENT"},{"id":"凌群新北B2M30400171-1","name":"梁韡馨","addr":"新北市中和區景平路433號十五樓之七","rent":16000,"start":"2026-08-01","status":"SENT"},{"id":"凌群台北A2M34100125-1","name":"胡崇軒","addr":"台北市信義區松勇路53巷6號七樓","rent":15000,"start":"2026-08-01","status":"SENT"},{"id":"凌群新北B2M34100106-1","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2026-08-05","status":"SENT"},{"id":"換房客","name":"陳冠岑","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2026-08-15","status":"SENT"},{"id":"凌群新北B2M30400131-2","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2026-08-20","status":"SENT"},{"id":"凌群新北B2M34100080-1","name":"黃美玲","addr":"新北市淡水區沙崙路171號九樓","rent":15000,"start":"2026-05-01","status":"DONE"},{"id":"X107","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":null,"start":"2026-07-01","status":"SENT"},{"id":"X108","name":"呂郭玉燕","addr":"台北市信義區莊敬路423巷4弄13號二樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X109","name":"劉宇翔","addr":"新北市汐止區汐萬路二段228巷31弄62號5樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X110","name":"施昱丞","addr":"新北市鶯歌區湖山路28巷4號","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X111","name":"陳宏祈","addr":"新北市蘆洲區九芎街41號四樓","rent":null,"start":"2026-08-01","status":"IN PROGRESS"},{"id":"X112","name":"王禧龍","addr":"台北市北投區溫泉路37巷26號八樓之6","rent":null,"start":"2026-08-10","status":"IN PROGRESS"}];
 
-// 地址比對用：把中文樓層數字（一二三...十）轉成阿拉伯數字，
-// 讓收款單上的地址（可能跟媒合資料的中文/阿拉伯數字寫法不同）也能對得上。
+// 地址比對用：處理「同一個地址、不同系統打法不同」的常見差異——
+// 中文樓層數字（一二三...十）vs 阿拉伯數字、全形數字、臺/台字體差異、
+// 空白、頓號/逗號等分隔符號。全部正規化成同一種寫法後再比對。
 function sheChineseNumToArabic(s){
   const d={"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9};
   if(s==="十") return 10;
@@ -1024,13 +1025,46 @@ function sheChineseNumToArabic(s){
 }
 function sheNormalizeAddr(addr){
   if(!addr) return "";
-  return String(addr).trim().replace(/[一二三四五六七八九十]+/g, s=>{
-    const n=sheChineseNumToArabic(s);
-    return n==null?s:String(n);
+  let s=String(addr).trim();
+  s=s.replace(/[\s\u3000]+/g,"");          // 去除所有空白（含全形空白）
+  s=s.replace(/臺/g,"台");                  // 臺/台 字體差異
+  s=s.replace(/[，,、]/g,"");               // 去除頓號、逗號等分隔符號（例如「一樓、二樓」）
+  s=s.replace(/[０-９]/g,c=>String.fromCharCode(c.charCodeAt(0)-0xFEE0)); // 全形數字轉半形
+  s=s.replace(/[一二三四五六七八九十]+/g, m=>{  // 中文數字轉阿拉伯數字
+    const n=sheChineseNumToArabic(m);
+    return n==null?m:String(n);
   });
+  return s;
 }
 const SHEZHAI_ADDR_MAP={};
 SHEZHAI_TENANTS.forEach(t=>{ SHEZHAI_ADDR_MAP[sheNormalizeAddr(t.addr)]=t; });
+
+// 地址比對主要入口：先試正規化後完全相符，找不到再試「其中一邊是另一邊的前綴」
+// （例如收款單地址省略了部分樓層描述），只有唯一候選時才採用，避免猜錯。
+function sheResolveTenantByAddr(addr){
+  const norm=sheNormalizeAddr(addr);
+  if(!norm) return null;
+  if(SHEZHAI_ADDR_MAP[norm]) return SHEZHAI_ADDR_MAP[norm];
+  const cands=SHEZHAI_TENANTS.filter(t=>{
+    const tn=sheNormalizeAddr(t.addr);
+    return tn.length>0 && (tn.startsWith(norm)||norm.startsWith(tn));
+  });
+  return cands.length===1?cands[0]:null;
+}
+
+// 姓名比對用：依姓名長度由長到短排序，避免短姓名互為子字串造成誤判
+// （例如「王小明」跟「王小明華」，要先比對「王小明華」才不會誤配到「王小明」）。
+const SHEZHAI_NAME_LIST=SHEZHAI_TENANTS
+  .filter(t=>t.name && t.name.length>=2)
+  .slice()
+  .sort((a,b)=>b.name.length-a.name.length);
+function sheFindTenantInNote(note){
+  if(!note) return null;
+  const clean=String(note).replace(/\s+/g,"");
+  if(!clean) return null;
+  const hit=SHEZHAI_NAME_LIST.find(t=>clean.includes(t.name));
+  return hit||null;
+}
 
 function pad2(n){return String(n).padStart(2,'0');}
 
@@ -4516,7 +4550,13 @@ function buildSheSchedule(fromKey, untilKey){
 // 社宅網銀金流表解析：與其他部門網銀格式相同（帳務日期／存入金額／備註／末五碼欄位一致）
 function parseSheBankXlsx(data){
   const rows=parseBankXlsx(data);
-  rows.forEach((r,i)=>{ r._bidx=i; }); // 給每筆入帳一個穩定索引，供人工確認/復原時辨識用
+  rows.forEach((r,i)=>{
+    r._bidx=i; // 給每筆入帳一個穩定索引，供人工確認/復原時辨識用
+    // 備註若含房客姓名，先比對出可能是哪位房客，供比對/人工核對使用
+    const t=sheFindTenantInNote(r.note);
+    r.noteTenantId=t?t.id:null;
+    r.noteTenantName=t?t.name:null;
+  });
   return rows;
 }
 
@@ -4553,7 +4593,7 @@ function parseSheReceiptXlsx(data){
       // 轉號後五碼欄位有時是文字備註（如「ATM存入」），過濾掉非純數字的
       const last5=(last5candidate && /^\d{5}$/.test(last5candidate))?last5candidate:null;
       const addrRaw=colAddr>=0&&r[colAddr]?String(r[colAddr]).trim():"";
-      const tenant=addrRaw?SHEZHAI_ADDR_MAP[sheNormalizeAddr(addrRaw)]:null;
+      const tenant=addrRaw?sheResolveTenantByAddr(addrRaw):null;
       return{
         _ridx:i,
         id:String(r[col("收款單編號")]),
@@ -4696,7 +4736,9 @@ function matchShe(dueList, bankList){
       if(picked) reason="金額＋轉入末五碼";
     }
     if(!picked){
-      picked=cands.find(b=>sheNoteContainsName(b.note, due.name));
+      // 備註含房客姓名：優先用預先算好的 noteTenantId（比對過全部房客姓名，避免姓名互為子字串誤判）
+      picked=cands.find(b=>b.noteTenantId&&b.noteTenantId===due.tenantId);
+      if(!picked) picked=cands.find(b=>sheNoteContainsName(b.note, due.name));
       if(picked) reason="金額＋備註含房客姓名";
     }
     if(picked){
@@ -5135,11 +5177,12 @@ function renderSheResult(){
       <td>${b.note||"—"}</td>
       <td class="mono">${b.last5||"—"}</td>
       <td class="mono">${b.partnerLast5||"—"}</td>
+      <td>${b.noteTenantName?`<span class="tag warn">${b.noteTenantName}</span>`:"—"}</td>
     `;
     tbB.appendChild(tr);
   });
   if(!bankOnly.length){
-    tbB.innerHTML=`<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:16px;">無剩餘未對應網銀入帳</td></tr>`;
+    tbB.innerHTML=`<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:16px;">無剩餘未對應網銀入帳</td></tr>`;
   }
 
   // ── 收款單登記但找不到對應期別（只有上傳收款單時才顯示這區塊）──

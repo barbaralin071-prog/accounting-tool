@@ -799,7 +799,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       已內建社宅媒合管理資料 <strong id="she-tenant-count">0</strong> 筆（房客姓名／案件地址／租金／契約起始日）。
       應繳日＝契約起始日的「日」，比對條件：<strong>金額相符為主</strong>，網銀轉入帳號末五碼／備註含房客姓名為輔助判斷。
     </div>
-    <div class="upload-row" style="grid-template-columns:1fr;">
+    <div class="upload-row" style="grid-template-columns:1fr 1fr;">
       <div>
         <div class="dropzone" id="she-dz-bank">
           <div class="dz-icon">🏦</div>
@@ -807,6 +807,14 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <div class="dz-hint">社宅帳戶網銀明細.xlsx</div>
         </div>
         <input type="file" id="she-file-bank" accept=".xlsx" hidden>
+      </div>
+      <div>
+        <div class="dropzone" id="she-dz-receipt">
+          <div class="dz-icon">🧾</div>
+          <div class="dz-label">上傳社宅收款單（選填）</div>
+          <div class="dz-hint">收款單.xlsx，用來第二輪救回網銀查不到的已繳紀錄（如現金/郵局匯款）</div>
+        </div>
+        <input type="file" id="she-file-receipt" accept=".xlsx" hidden>
       </div>
     </div>
     <div class="errbox" id="she-err"></div>
@@ -894,6 +902,21 @@ button.btn.ghost:hover{background:var(--accent-soft);}
             <th>備註</th><th>虛擬帳號末五碼</th><th>對手末五碼</th>
           </tr></thead>
           <tbody id="she-tb-bankonly"></tbody>
+        </table>
+      </div>
+
+      <!-- 收款單登記但找不到對應期別（僅在有上傳收款單時顯示）-->
+      <div class="sec-label" id="she-receiptonly-label" style="margin-top:4px;border-top:2px solid var(--border);padding-top:10px;display:none;">
+        🧾 收款單有登記，但找不到唯一對應的應繳期別
+        <span style="font-size:11.5px;font-weight:400;color:var(--ink-soft);">— 可能是金額重複命中多個期別、或不在這次比對的月份範圍內，請人工核對</span>
+      </div>
+      <div class="tbl-wrap" id="she-receiptonly-wrap" style="display:none;">
+        <table>
+          <thead><tr>
+            <th>#</th><th>收款單編號</th><th>收款日期</th><th class="right">收款金額</th>
+            <th>轉號後五碼</th><th>款項細節說明</th>
+          </tr></thead>
+          <tbody id="she-tb-receiptonly"></tbody>
         </table>
       </div>
 
@@ -987,6 +1010,27 @@ const HOUSING_DATA = [{"code":"AH1150705","name":"成都159","aliases":[],"servi
 // HOUSING_SORTED 已在下方 matchHousing 區塊定義
 
 const SHEZHAI_TENANTS = [{"id":"凌群新北B2M34100106","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2025-08-05","status":"DONE"},{"id":"凌群台北A2M34100129","name":"鄧勝哲","addr":"台北市中山區錦州街262號四樓","rent":10000,"start":"2025-08-08","status":"DONE"},{"id":"凌群台北A2M34100138","name":"葉士賢","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2025-08-15","status":"DONE"},{"id":"凌群新北B2M30400131-1","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2025-08-20","status":"DONE"},{"id":"租寓平台A2M30400043","name":"黃晟恩","addr":"台北市南港區成福路168號三樓之6","rent":17000,"start":"2025-07-10","status":"DONE"},{"id":"凌群台北A2M34100143","name":"彭羽慈","addr":"台北市中正區漢口街一段110號八樓之12","rent":26000,"start":"2025-09-01","status":"DONE"},{"id":"租寓平台A2M30400047","name":"劉繼仁","addr":"台北市中山區錦州街30巷11號七樓之26","rent":12000,"start":"2026-03-15","status":"DONE"},{"id":"租寓平台A2M30400037-1","name":"鄧乃綺","addr":"台北市信義區吳興街34巷1號三樓之1","rent":19900,"start":"2025-09-05","status":"DONE"},{"id":"凌群新北B2M30400177","name":"蕭睆珍","addr":"新北市新店區中央路175號七樓之2","rent":16000,"start":"2025-09-05","status":"DONE"},{"id":"租寓平台A2M30400035-1","name":"林若喬","addr":"台北市信義區莊敬路423巷4弄13號三樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400033-1","name":"周蔡莎娜","addr":"台北市信義區莊敬路423巷4弄13號四樓","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"租寓平台A2M30400036-1","name":"胡崇胤","addr":"台北市信義區莊敬路423巷4弄13號","rent":15000,"start":"2025-09-10","status":"DONE"},{"id":"凌群新北B2M30400176","name":"陳淑玫","addr":"新北市板橋區雙十路二段98號三樓","rent":19900,"start":"2025-09-15","status":"DONE"},{"id":"凌群新北B2M34100122","name":"莊峰源","addr":"新北市永和區福和路236號二樓","rent":19900,"start":"2025-10-01","status":"DONE"},{"id":"租寓平台A2M30400002-2","name":"朱容瑩","addr":"台北市南港區研究院路二段197巷21號三樓","rent":16000,"start":"2025-10-01","status":"DONE"},{"id":"凌群新北B2M30500001","name":"江廷安","addr":"新北市淡水區八勢一街63巷42號七樓","rent":17000,"start":"2025-10-10","status":"DONE"},{"id":"凌群臺北A2M30500004","name":"林大宏","addr":"台北市信義區莊敬路423巷4弄15號四樓","rent":19000,"start":"2025-10-10","status":"DONE"},{"id":"凌群台北A2M34100003-1","name":"陳信助","addr":"台北市士林區中正路399巷18號二樓","rent":16000,"start":"2025-10-12","status":"DONE"},{"id":"凌群台北A2M34100007-1","name":"李仙娥","addr":"台北市萬華區艋舺大道420號四樓","rent":19500,"start":"2025-10-16","status":"DONE"},{"id":"租寓平台A2M30400041","name":"曾沛玲","addr":"台北市中正區羅斯福路二段150號五樓","rent":16800,"start":"2025-03-10","status":"DONE"},{"id":"租寓平台A2M30400005-2","name":"王亭媗","addr":"台北市萬華區雙和街58號三樓","rent":15000,"start":"2025-10-18","status":"DONE"},{"id":"租寓平台A2M30400040","name":"朱軒穎","addr":"台北市中山區民生東路一段48號八樓之4","rent":17700,"start":"2024-12-05","status":"DONE"},{"id":"凌群臺北A2M30500008","name":"莊侑勳","addr":"台北市萬華區西藏路125巷13號二樓之1","rent":30000,"start":"2025-10-30","status":"DONE"},{"id":"凌群臺北A2M30500009","name":"陳貞文","addr":"台北市松山區八德路四段72巷16弄14號四樓","rent":23000,"start":"2025-10-31","status":"DONE"},{"id":"凌群臺北A2M30500014","name":"張益文","addr":"台北市信義區大道路137號一樓","rent":31200,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500013","name":"陳敬仁","addr":"台北市中山區中山北路二段65巷17之1號四樓","rent":26000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M30500009","name":"林淑美","addr":"新北市淡水區竿蓁二街19巷12之1號十一樓","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群臺北A2M30500011","name":"王得翰","addr":"台北市萬華區環河南路二段147號八樓之1","rent":19900,"start":"2025-11-01","status":"DONE"},{"id":"凌群台北A2M34100011-1","name":"葉倩宇","addr":"台北市萬華區成都路139號三樓之3","rent":25000,"start":"2025-11-01","status":"DONE"},{"id":"凌群新北B2M34100015-1","name":"徐智薇","addr":"新北市中和區中正路602號五樓","rent":17000,"start":"2025-11-15","status":"DONE"},{"id":"租寓平台A2M30400007-2","name":"陳珠英","addr":"台北市萬華區萬大路137巷18號二樓","rent":15000,"start":"2025-11-15","status":"DONE"},{"id":"凌群臺北A2M30500023","name":"廖紫伶","addr":"臺北市大同區大龍街10號二樓","rent":23000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100154","name":"汪詩融","addr":"台北市中山區德惠街34號七樓之27","rent":13000,"start":"2025-11-15","status":"DONE"},{"id":"凌群台北A2M34100056-1","name":"邱鈺佩","addr":"台北市士林區士東路266巷12弄7號五樓","rent":26000,"start":"2026-02-15","status":"DONE"},{"id":"凌群台北A2M34100014-1","name":"易夢姍","addr":"台北市中山區龍江路408號四樓","rent":15000,"start":"2025-11-20","status":"DONE"},{"id":"凌群台北A2M34100045-1","name":"刁袣幗","addr":"台北市萬華區西昌街142號七樓之2","rent":25000,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100019-1","name":"高健利","addr":"新北市土城區中央路四段58之1號二樓","rent":23000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100015-1","name":"楊佩容","addr":"台北市中山區龍江路410號四樓","rent":15000,"start":"2025-11-23","status":"DONE"},{"id":"凌群台北A2M34100013-1","name":"蘇俊青","addr":"台北市大安區復興南路一段126巷1號五樓之7","rent":19800,"start":"2025-11-25","status":"DONE"},{"id":"凌群臺北A2M30500031","name":"張貽鈞","addr":"台北市北投區天母北路105巷15弄1號七樓之5","rent":13500,"start":"2025-12-01","status":"DONE"},{"id":"租寓平台A2M30400008-2","name":"陳聖淦","addr":"台北市萬華區青年路152巷31號四樓","rent":11000,"start":"2025-12-01","status":"DONE"},{"id":"凌群新北B2M30500023","name":"江曉雯","addr":"新北市板橋區南雅東路21號三樓","rent":10000,"start":"2025-12-01","status":"DONE"},{"id":"凌群臺北A2M30500029","name":"王佳玉","addr":"台北市大同區延平北路四段93之2號四樓","rent":25000,"start":"2025-12-05","status":"DONE"},{"id":"凌群臺北A2M30500035","name":"薛里華","addr":"台北市內湖區內湖路二段103巷92弄10號五樓之2","rent":24000,"start":"2025-12-05","status":"DONE"},{"id":"凌群新北B2M30500032","name":"江嘉偉","addr":"新北市淡水區竿蓁二街19巷8之1號三樓","rent":16100,"start":"2025-12-10","status":"DONE"},{"id":"凌群新北B2M30500035","name":"黃文凌","addr":"新北市板橋區民生路三段281巷2弄11號五樓","rent":19900,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100020-1","name":"吳珮嫙","addr":"台北市中山區新生北路二段70號七樓之7","rent":23000,"start":"2025-12-10","status":"DONE"},{"id":"凌群台北A2M34100023-1","name":"馬志朋","addr":"台北市中山區南京東路三段48巷38號十一樓之1","rent":19500,"start":"2025-12-15","status":"DONE"},{"id":"凌群台北A2M34100024-1","name":"王愛玉","addr":"台北市萬華區西昌街142號七樓之1","rent":12000,"start":"2025-12-17","status":"DONE"},{"id":"凌群台北A2M34100026-1","name":"郭子賢","addr":"台北市大同區延平北路四段117號三樓","rent":15000,"start":"2025-12-18","status":"DONE"},{"id":"凌群新北B2M30500039","name":"李耀宗","addr":"新北市三重區中正南路250巷11號二十七樓","rent":19900,"start":"2026-01-01","status":"DONE"},{"id":"凌群臺北A2M30500058","name":"陳捷","addr":"台北市士林區中山北路六段152號四樓之2","rent":19500,"start":"2026-01-01","status":"DONE"},{"id":"凌群台北A2M34100036-1","name":"李芳瑜","addr":"台北市大同區民生西路171巷3號十四樓之1","rent":14000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100042-1","name":"高如玟","addr":"台北市中山區松江路28號九樓","rent":18000,"start":"2026-01-15","status":"DONE"},{"id":"凌群台北A2M34100037-1","name":"莊富安","addr":"台北市中正區臨沂街61巷20號一樓","rent":15000,"start":"2026-01-15","status":"DONE"},{"id":"凌群新北B2M30500043","name":"王慧芝","addr":"新北市板橋區國慶路195號七樓","rent":28000,"start":"2026-01-16","status":"DONE"},{"id":"凌群台北A2M34100047-1","name":"林國聯","addr":"台北市內湖區潭美街89號一樓、二樓","rent":14500,"start":"2026-01-20","status":"DONE"},{"id":"凌群新北B2M34100042-1","name":"曾瓊玉","addr":"新北市板橋區光武街36巷6號五樓","rent":19900,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100053-1","name":"王以太","addr":"台北市萬華區萬大路137巷37號五樓","rent":19000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100051-1","name":"李芷菁","addr":"台北市中山區錦州街30巷11號七樓之6","rent":7500,"start":"2026-02-01","status":"DONE"},{"id":"凌群臺北A2M30500064","name":"廖炫雄","addr":"台北市萬華區東園街154巷9弄22號一樓","rent":16000,"start":"2026-02-01","status":"DONE"},{"id":"凌群台北A2M34100164","name":"林顯聖","addr":"台北市萬華區西園路一段57號二樓","rent":27000,"start":"2026-02-01","status":"DONE"},{"id":"凌群新北B2M34100044-1","name":"林冠彣","addr":"新北市淡水區中山北路一段180巷8號三樓","rent":16000,"start":"2026-02-05","status":"DONE"},{"id":"租寓平台A2M30400009-1","name":"施中涵","addr":"台北市士林區社子街97巷13號二樓","rent":17000,"start":"2025-02-10","status":"DONE"},{"id":"凌群新北B2M30500057","name":"鍾易政","addr":"新北市板橋區南雅東路15號三樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"租寓平台A2M30400010-2","name":"連絹蓉","addr":"台北市士林區基河路40號十一樓之6","rent":15700,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M30400153-1","name":"鄧奕辰","addr":"新北市永和區仁愛路352巷134號二樓","rent":12000,"start":"2026-03-01","status":"DONE"},{"id":"凌群臺北A2M30500077","name":"林鍾秀麗","addr":"台北市北投區大同街200巷3號三樓","rent":23500,"start":"2026-03-01","status":"DONE"},{"id":"凌群新北B2M34100040-1","name":"孫苑綾","addr":"新北市新莊區昌平街71巷19號十四樓","rent":22000,"start":"2026-03-01","status":"DONE"},{"id":"凌群台北A2M34100066-1","name":"游芬彩","addr":"台北市南港區南深路9號三樓","rent":19900,"start":"2026-03-05","status":"DONE"},{"id":"凌群台北A2M34100079-1","name":"吳仙英","addr":"台北市中正區中華路二段443巷1號一樓、二樓","rent":17000,"start":"2026-04-01","status":"DONE"},{"id":"租寓平台A2M30400011-2","name":"容毓雅","addr":"台北市南港區南深路33之4號","rent":16000,"start":"2026-03-26","status":"DONE"},{"id":"凌群台北A2M34100065-1","name":"宮敏","addr":"台北市中山區中原街22號五樓之8","rent":19900,"start":"2026-04-01","status":"DONE"},{"id":"凌群台北A2M30500090","name":"黃毅強","addr":"台北市中山區新生北路三段1號十樓之12","rent":16000,"start":"2026-04-01","status":"DONE"},{"id":"凌群新北B2M30500071","name":"謝宜勳","addr":"新北市汐止區茄苳路325號四樓","rent":19900,"start":"2026-04-04","status":"DONE"},{"id":"凌群新北B2M30500076","name":"賴聲聞","addr":"新北市新莊區中誠街38號四樓","rent":23000,"start":"2026-04-14","status":"DONE"},{"id":"凌群新北B2M34100062-1","name":"蘇詩涵","addr":"新北市板橋區民生路二段32號二樓","rent":19900,"start":"2026-04-15","status":"DONE"},{"id":"凌群新北B2M30500075","name":"游皓翔","addr":"新北市汐止區新昌路5號二樓","rent":28500,"start":"2026-04-15","status":"DONE"},{"id":"凌群台北A2M30500094","name":"林哲安","addr":"台北市中山區新生北路二段108號六樓之19","rent":12000,"start":"2026-04-20","status":"DONE"},{"id":"凌群臺北A2M30500112","name":"吳思鴻","addr":"台北市信義區大道路137之1號五樓","rent":19900,"start":"2026-05-01","status":"DONE"},{"id":"凌群台北A2M34100174","name":"林郁珊","addr":"台北市中山區民權東路二段135巷16號六樓之4","rent":18000,"start":"2026-05-01","status":"DONE"},{"id":"租寓平台A2M30400022-2","name":"吳嘉雯","addr":"台北市士林區承德路四段40巷24號","rent":15000,"start":"2026-05-15","status":"DONE"},{"id":"租寓平台A2M30400020-2","name":"邱羿捷","addr":"台北市萬華區雙和街60號二樓","rent":12000,"start":"2026-05-16","status":"DONE"},{"id":"租寓平台A2M30400021-2","name":"潘永安","addr":"台北市北投區實踐街20號二樓","rent":19000,"start":"2026-05-15","status":"DONE"},{"id":"凌群台北A2M34100096-1","name":"蔡毓玲","addr":"台北市中正區中華路二段443巷3號一、二樓","rent":17000,"start":"2026-05-16","status":"DONE"},{"id":"凌群台北A2M34100102-1","name":"張毓芳","addr":"台北市大同區大龍街91巷12號十二樓之8","rent":23500,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M30500122","name":"顏煒芯","addr":"台北市大安區通化街38巷10之3號一樓","rent":10000,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100175","name":"林裕逸","addr":"台北市文山區興隆路二段252號十四樓之2","rent":18000,"start":"2026-06-01","status":"DONE"},{"id":"凌群新北B2M30500097","name":"張鳳玲","addr":"新北市板橋區莒光路86號三樓","rent":19900,"start":"2026-06-01","status":"DONE"},{"id":"凌群台北A2M34100103-1","name":"張倪禎","addr":"台北市大同區延平北路一段51號九樓之5","rent":17800,"start":"2026-06-02","status":"DONE"},{"id":"凌群新北B2M34100088-1","name":"林國泰","addr":"新北市林口區仁愛路一段256號五樓","rent":13000,"start":"2026-06-10","status":"DONE"},{"id":"凌群台北A2M30500128","name":"周予寧","addr":"台北市中正區林森南路137號五樓之2","rent":19700,"start":"2026-06-12","status":"DONE"},{"id":"租寓平台A2M30400042-1","name":"葉承寬","addr":"台北市信義區吳興街600巷96弄6號三樓","rent":23500,"start":"2026-06-15","status":"SENT"},{"id":"凌群台北A2M34100110-1","name":"許乃文","addr":"台北市萬華區中華路一段68號十三樓之2","rent":19000,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500101","name":"魏芷榕","addr":"新北市三峽區大智路8之6號十一樓","rent":16000,"start":"2026-06-15","status":"DONE"},{"id":"凌群台北A2M30500125","name":"陳梅岑","addr":"台北市中山區新生北路二段62巷40號六樓之一","rent":19900,"start":"2026-06-15","status":"DONE"},{"id":"凌群新北B2M30500109","name":"陳韋廷","addr":"新北市中和區大仁街10巷16弄9號二樓","rent":26500,"start":"2026-06-16","status":"DONE"},{"id":"X097","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":14500,"start":"2026-08-10","status":"SENT"},{"id":"凌群新北B2M34100093-1","name":"陳堯暄","addr":"新北市永和區文化路90巷27弄1號","rent":19900,"start":"2026-07-07","status":"SENT"},{"id":"凌群新北B2M34100144","name":"黃孟芸","addr":"新北市蘆洲區中興街89號十四樓之三","rent":15000,"start":"2026-07-08","status":"DONE"},{"id":"凌群台北A2M34100114-1","name":"林孍","addr":"台北市大安區辛亥路一段40號五樓","rent":15000,"start":"2026-07-10","status":"SENT"},{"id":"凌群新北B2M30400171-1","name":"梁韡馨","addr":"新北市中和區景平路433號十五樓之七","rent":16000,"start":"2026-08-01","status":"SENT"},{"id":"凌群台北A2M34100125-1","name":"胡崇軒","addr":"台北市信義區松勇路53巷6號七樓","rent":15000,"start":"2026-08-01","status":"SENT"},{"id":"凌群新北B2M34100106-1","name":"高暐翔","addr":"新北市三重區重安街13巷6號二樓","rent":25000,"start":"2026-08-05","status":"SENT"},{"id":"換房客","name":"陳冠岑","addr":"台北市中山區松江路100巷18號二樓","rent":13000,"start":"2026-08-15","status":"SENT"},{"id":"凌群新北B2M30400131-2","name":"王櫻曉","addr":"新北市新店區竹林路2巷34弄3號四樓","rent":18000,"start":"2026-08-20","status":"SENT"},{"id":"凌群新北B2M34100080-1","name":"黃美玲","addr":"新北市淡水區沙崙路171號九樓","rent":15000,"start":"2026-05-01","status":"DONE"},{"id":"X107","name":"李東霖","addr":"台北市大同區承德路二段75巷11號一樓","rent":null,"start":"2026-07-01","status":"SENT"},{"id":"X108","name":"呂郭玉燕","addr":"台北市信義區莊敬路423巷4弄13號二樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X109","name":"劉宇翔","addr":"新北市汐止區汐萬路二段228巷31弄62號5樓","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X110","name":"施昱丞","addr":"新北市鶯歌區湖山路28巷4號","rent":null,"start":"2026-08-01","status":"SENT"},{"id":"X111","name":"陳宏祈","addr":"新北市蘆洲區九芎街41號四樓","rent":null,"start":"2026-08-01","status":"IN PROGRESS"},{"id":"X112","name":"王禧龍","addr":"台北市北投區溫泉路37巷26號八樓之6","rent":null,"start":"2026-08-10","status":"IN PROGRESS"}];
+
+// 地址比對用：把中文樓層數字（一二三...十）轉成阿拉伯數字，
+// 讓收款單上的地址（可能跟媒合資料的中文/阿拉伯數字寫法不同）也能對得上。
+function sheChineseNumToArabic(s){
+  const d={"零":0,"一":1,"二":2,"三":3,"四":4,"五":5,"六":6,"七":7,"八":8,"九":9};
+  if(s==="十") return 10;
+  if(s.length===1) return d[s]!=null?d[s]:null;
+  if(s.length===2 && s[0]==="十") return 10+(d[s[1]]||0);
+  if(s.length===2 && s[1]==="十") return (d[s[0]]||0)*10;
+  if(s.length===3 && s[1]==="十") return (d[s[0]]||0)*10+(d[s[2]]||0);
+  return null;
+}
+function sheNormalizeAddr(addr){
+  if(!addr) return "";
+  return String(addr).trim().replace(/[一二三四五六七八九十]+/g, s=>{
+    const n=sheChineseNumToArabic(s);
+    return n==null?s:String(n);
+  });
+}
+const SHEZHAI_ADDR_MAP={};
+SHEZHAI_TENANTS.forEach(t=>{ SHEZHAI_ADDR_MAP[sheNormalizeAddr(t.addr)]=t; });
 
 function pad2(n){return String(n).padStart(2,'0');}
 
@@ -4476,6 +4520,135 @@ function parseSheBankXlsx(data){
   return rows;
 }
 
+// 社宅收款單解析（RAGIC 收款單匯出）。
+// 注意：這份匯出檔裡「地址」欄位名稱重複出現兩次（一次在前段、常是空的；
+// 真正有值的是後段跟「縣市／行政區」相鄰的那一欄），所以要抓最後一個「地址」欄位。
+// 抓到地址後，會用地址去比對內建的社宅媒合資料，藉此反推出這筆收款單是哪位房客繳的。
+function parseSheReceiptXlsx(data){
+  const wb=XLSX.read(data,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const hi=aoa.findIndex(r=>r.some(c=>c==="收款單編號"));
+  if(hi===-1)throw new Error("找不到「收款單編號」欄位，請確認是收款單格式");
+  const headers=aoa[hi];
+  const col=n=>headers.indexOf(n);
+  const colType=col("接案類型"), colAcct=col("收款帳戶");
+  // 「地址」欄位重複，取最後一次出現的位置（跟縣市/行政區相鄰、真正有值的那欄）
+  const addrIndices=headers.reduce((arr,h,i)=>{ if(h==="地址") arr.push(i); return arr; },[]);
+  const colAddr=addrIndices.length?addrIndices[addrIndices.length-1]:-1;
+
+  return aoa.slice(hi+1)
+    .filter(r=>r[col("收款單編號")]!=null)
+    // 只留社宅相關的收款單（用接案類型／收款帳戶名稱判斷，避免混到其他部門的資料）
+    .filter(r=>{
+      const type=colType>=0?String(r[colType]||""):"";
+      const acct=colAcct>=0?String(r[colAcct]||""):"";
+      return type.includes("社會住宅")||type.includes("社宅")||acct.includes("社會住宅")||acct.includes("社宅");
+    })
+    .map((r,i)=>{
+      const dateVal=r[col("收款日期")];
+      const roc=toRoc(dateVal);
+      const last5raw=r[col("轉號後五碼")];
+      const last5candidate=ragicLast5(last5raw);
+      // 轉號後五碼欄位有時是文字備註（如「ATM存入」），過濾掉非純數字的
+      const last5=(last5candidate && /^\d{5}$/.test(last5candidate))?last5candidate:null;
+      const addrRaw=colAddr>=0&&r[colAddr]?String(r[colAddr]).trim():"";
+      const tenant=addrRaw?SHEZHAI_ADDR_MAP[sheNormalizeAddr(addrRaw)]:null;
+      return{
+        _ridx:i,
+        id:String(r[col("收款單編號")]),
+        dateKey:roc.dateKey, rocStr:roc.str,
+        amount:Number(r[col("收款金額")]),
+        last5,
+        addr:addrRaw,
+        tenantId:tenant?tenant.id:null,
+        tenantName:tenant?tenant.name:null,
+        detail:r[col("款項細節說明")]?String(r[col("款項細節說明")]).trim():"",
+        reporter:r[col("回報人員")]?String(r[col("回報人員")]):"",
+      };
+    })
+    .filter(r=>r.amount>0);
+}
+
+// 收款單第二輪比對（進階版）：
+// 1. 收款單地址若能對到房客 → 用「房客身份＋金額＋期間」去比對，準確度最高，
+//    「未繳」跟「金額重複待確認」都能處理；待確認的部分若收款單的轉號後五碼
+//    剛好跟某個候選網銀入帳的末五碼相符，就直接鎖定那筆網銀入帳。
+// 2. 地址對不到房客的收款單，退回用「金額＋期間」去比對還沒解決的未繳（原本的做法）。
+function matchSheReceiptsAdvanced(unmatchedList, ambiguousList, receiptList){
+  const receiptUsed=new Set();
+  const rescued=[]; // {due, bank?, receipt, reason}
+
+  const idTagged=receiptList.filter(r=>r.tenantId);
+
+  const stillUnmatched1=[];
+  unmatchedList.forEach(due=>{
+    const r=idTagged.find(r=>
+      !receiptUsed.has(r._ridx) && r.tenantId===due.tenantId
+      && r.amount===due.amount && dateDiffDays(due.dateKey,r.dateKey)<=SHE_WINDOW_DAYS);
+    if(r){
+      receiptUsed.add(r._ridx);
+      rescued.push({due, receipt:r, reason:"收款單地址比對"});
+    }else{
+      stillUnmatched1.push(due);
+    }
+  });
+
+  const stillAmbiguous=[];
+  ambiguousList.forEach(item=>{
+    const due=item.due;
+    const r=idTagged.find(r=>
+      !receiptUsed.has(r._ridx) && r.tenantId===due.tenantId
+      && r.amount===due.amount && dateDiffDays(due.dateKey,r.dateKey)<=SHE_WINDOW_DAYS);
+    if(r){
+      receiptUsed.add(r._ridx);
+      const bankHit=r.last5?item.candidates.find(c=>c.last5===r.last5||c.partnerLast5===r.last5):null;
+      if(bankHit){
+        rescued.push({due, bank:bankHit, receipt:r, reason:"收款單地址＋末五碼確認"});
+      }else{
+        rescued.push({due, receipt:r, reason:"收款單地址比對"});
+      }
+    }else{
+      stillAmbiguous.push(item);
+    }
+  });
+
+  // 地址沒對到人的收款單，退回原本「金額＋期間」的比對方式，試試剩下的未繳
+  const remainingReceipts=receiptList.filter(r=>!receiptUsed.has(r._ridx));
+  const r2=matchSheReceipts(stillUnmatched1, remainingReceipts);
+  r2.rescued.forEach(x=>rescued.push({due:x.due, receipt:x.receipt, reason:"收款單金額比對"}));
+
+  return{
+    rescued,
+    stillUnmatched:r2.stillUnmatched,
+    stillAmbiguous,
+    receiptOnly:r2.receiptOnly,
+  };
+}
+
+// 收款單／未繳 簡易比對：只看金額＋期間，唯一命中才救回（沒有房客身份可用時的退路）
+function matchSheReceipts(unmatchedList, receiptList){
+  const receiptUsed=new Set();
+  const rescued=[]; // {due, receipt}
+  const stillUnmatched=[];
+
+  unmatchedList.forEach(due=>{
+    const cands=receiptList.filter(r=>
+      !receiptUsed.has(r._ridx)
+      && r.amount===due.amount
+      && dateDiffDays(due.dateKey, r.dateKey)<=SHE_WINDOW_DAYS);
+    if(cands.length===1){
+      receiptUsed.add(cands[0]._ridx);
+      rescued.push({due, receipt:cands[0]});
+    }else{
+      stillUnmatched.push(due);
+    }
+  });
+
+  const receiptOnly=receiptList.filter(r=>!receiptUsed.has(r._ridx));
+  return{rescued, stillUnmatched, receiptOnly};
+}
+
 // 比對：金額相符為主，末五碼與備註房客姓名為輔助判斷
 function matchShe(dueList, bankList){
   const bankUsed=new Set();
@@ -4540,10 +4713,11 @@ function matchShe(dueList, bankList){
 
 let sheState={
   bank:null, fileName:null,
+  receipt:null, receiptFileName:null,
   // 自動比對的原始結果（不受人工確認影響，重新整理的基礎）
-  rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[],
+  rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[], rawReceiptOnly:[],
   // 套用人工確認後、實際顯示用的結果
-  allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[],
+  allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], allReceiptOnly:[],
   manualResolutions:{}, // dueKey -> {action:'confirm', bankIdx} | {action:'unpaid'}
   rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null,
 };
@@ -4554,8 +4728,10 @@ function sheSaveState(){
   try{
     localStorage.setItem(SHE_STORAGE_KEY, JSON.stringify({
       bank:sheState.bank, fileName:sheState.fileName,
+      receipt:sheState.receipt, receiptFileName:sheState.receiptFileName,
       rawMatched:sheState.rawMatched, rawUnmatched:sheState.rawUnmatched,
       rawAmbiguous:sheState.rawAmbiguous, rawBankOnly:sheState.rawBankOnly,
+      rawReceiptOnly:sheState.rawReceiptOnly,
       manualResolutions:sheState.manualResolutions,
       rangeStr:sheState.rangeStr, selectedYm:sheState.selectedYm,
       bankMinKey:sheState.bankMinKey, bankMaxKey:sheState.bankMaxKey,
@@ -4628,6 +4804,7 @@ function sheApplyResolutions(){
   sheState.allUnmatched=unmatched;
   sheState.allAmbiguous=pending;
   sheState.allBankOnly=sheState.rawBankOnly.filter(b=>!usedBankIdx.has(b._bidx));
+  sheState.allReceiptOnly=sheState.rawReceiptOnly;
 }
 
 function sheResolveAmbiguous(dueKey, action, bankIdx){
@@ -4688,6 +4865,18 @@ bindDropzone("she-dz-bank","she-file-bank",async(file,dz)=>{
   document.getElementById("she-btn-match").disabled=!sheState.bank;
 });
 
+bindDropzone("she-dz-receipt","she-file-receipt",async(file,dz)=>{
+  try{
+    const data=await readFile(file);
+    sheState.receipt=parseSheReceiptXlsx(data);
+    sheState.receiptFileName=file.name;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${sheState.receipt.length} 筆社宅收款紀錄）`;
+    clearErr("she-err");
+  }catch(e){ showErr("she-err", e.message); sheState.receipt=null; }
+  // 收款單是選填，不影響「開始比對」按鈕是否可按
+});
+
 document.getElementById("she-btn-match").addEventListener("click",()=>{
   clearErr("she-err");
   const bank=sheState.bank||[];
@@ -4713,10 +4902,37 @@ document.getElementById("she-btn-match").addEventListener("click",()=>{
   res.ambiguous=res.ambiguous.filter(a=>
     a.due.dateKey>=bankMinKey && a.due.dateKey<=Math.min(todayKey,bankMaxKey));
 
-  sheState.rawMatched=res.matched;
-  sheState.rawUnmatched=res.unmatched;
-  sheState.rawAmbiguous=res.ambiguous;
+  let finalMatched=res.matched;
+  let finalUnmatched=res.unmatched;
+  let finalAmbiguous=res.ambiguous;
+  let receiptOnly=[];
+
+  // 第二輪：用收款單救回網銀查不到的已繳紀錄（如現金/郵局匯款），
+  // 收款單地址若能對到房客身份，也能幫忙解開「金額重複待確認」。
+  if(sheState.receipt && sheState.receipt.length){
+    const r2=matchSheReceiptsAdvanced(res.unmatched, res.ambiguous, sheState.receipt.slice());
+    finalUnmatched=r2.stillUnmatched;
+    finalAmbiguous=r2.stillAmbiguous;
+    finalMatched=res.matched.concat(r2.rescued.map(x=>{
+      if(x.bank){
+        // 收款單地址＋末五碼都確認到具體是哪一筆網銀入帳
+        return{due:x.due, bank:x.bank, reason:x.reason};
+      }
+      // 只有收款單本身可當證據，沒有指定到具體網銀入帳，用收款單資料組一個「入帳」顯示用
+      return{
+        due:x.due,
+        bank:{dateKey:x.receipt.dateKey, amount:x.receipt.amount, note:"（收款單）"+x.receipt.detail, last5:x.receipt.last5, partnerLast5:null, _bidx:"receipt_"+x.receipt._ridx},
+        reason:x.reason,
+      };
+    }));
+    receiptOnly=r2.receiptOnly;
+  }
+
+  sheState.rawMatched=finalMatched;
+  sheState.rawUnmatched=finalUnmatched;
+  sheState.rawAmbiguous=finalAmbiguous;
   sheState.rawBankOnly=res.bankOnly;
+  sheState.rawReceiptOnly=receiptOnly;
   sheState.manualResolutions={}; // 換一份新的比對結果，之前的人工確認清空重來
   sheState.rangeStr=`${rocStr(bankMinKey)} ～ ${rocStr(bankMaxKey)}`;
   sheState.bankMinKey=bankMinKey;
@@ -4730,9 +4946,9 @@ document.getElementById("she-btn-match").addEventListener("click",()=>{
 });
 
 document.getElementById("she-btn-reset").addEventListener("click",()=>{
-  sheState={bank:null, fileName:null,
-    rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[],
-    allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[],
+  sheState={bank:null, fileName:null, receipt:null, receiptFileName:null,
+    rawMatched:[], rawUnmatched:[], rawAmbiguous:[], rawBankOnly:[], rawReceiptOnly:[],
+    allMatched:[], allUnmatched:[], allAmbiguous:[], allBankOnly:[], allReceiptOnly:[],
     manualResolutions:{}, rangeStr:null, selectedYm:"", bankMinKey:null, bankMaxKey:null};
   sheClearStorage();
   document.getElementById("she-upload").hidden=false;
@@ -4741,6 +4957,10 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   dz.classList.remove("loaded");
   dz.querySelector(".dz-label").textContent="上傳社宅網銀金流表";
   document.getElementById("she-file-bank").value="";
+  const dzR=document.getElementById("she-dz-receipt");
+  dzR.classList.remove("loaded");
+  dzR.querySelector(".dz-label").textContent="上傳社宅收款單（選填）";
+  document.getElementById("she-file-receipt").value="";
   document.getElementById("she-btn-match").disabled=true;
   clearErr("she-err");
 });
@@ -4751,10 +4971,13 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   if(!saved || !saved.bank || !saved.bank.length) return;
   sheState.bank=saved.bank;
   sheState.fileName=saved.fileName;
+  sheState.receipt=saved.receipt||null;
+  sheState.receiptFileName=saved.receiptFileName||null;
   sheState.rawMatched=saved.rawMatched||[];
   sheState.rawUnmatched=saved.rawUnmatched||[];
   sheState.rawAmbiguous=saved.rawAmbiguous||[];
   sheState.rawBankOnly=saved.rawBankOnly||[];
+  sheState.rawReceiptOnly=saved.rawReceiptOnly||[];
   sheState.manualResolutions=saved.manualResolutions||{};
   sheState.rangeStr=saved.rangeStr;
   sheState.selectedYm=saved.selectedYm||"";
@@ -4765,6 +4988,12 @@ document.getElementById("she-btn-reset").addEventListener("click",()=>{
   dz.classList.add("loaded");
   dz.querySelector(".dz-label").textContent="✓ "+(sheState.fileName||"（已還原上次資料）");
   document.getElementById("she-btn-match").disabled=false;
+
+  if(sheState.receipt && sheState.receipt.length){
+    const dzR=document.getElementById("she-dz-receipt");
+    dzR.classList.add("loaded");
+    dzR.querySelector(".dz-label").textContent="✓ "+(sheState.receiptFileName||"（已還原上次收款單）")+`（${sheState.receipt.length} 筆）`;
+  }
 
   if(sheState.rawMatched.length||sheState.rawUnmatched.length||sheState.rawAmbiguous.length||sheState.rawBankOnly.length){
     sheApplyResolutions();
@@ -4787,6 +5016,7 @@ function renderSheResult(){
   const unmatched=sheState.allUnmatched.filter(d=>!ym||d.ym===ym);
   const ambiguous=sheState.allAmbiguous.filter(a=>!ym||a.due.ym===ym);
   const bankOnly=sheState.allBankOnly.filter(b=>!ym||sheYmOfDateKey(b.dateKey)===ym);
+  const receiptOnly=(sheState.allReceiptOnly||[]).filter(r=>!ym||sheYmOfDateKey(r.dateKey)===ym);
   const todayKey=sheTodayDateKey();
 
   document.getElementById("she-cnt-matched").textContent=matched.length;
@@ -4910,6 +5140,31 @@ function renderSheResult(){
   });
   if(!bankOnly.length){
     tbB.innerHTML=`<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:16px;">無剩餘未對應網銀入帳</td></tr>`;
+  }
+
+  // ── 收款單登記但找不到對應期別（只有上傳收款單時才顯示這區塊）──
+  const hasReceipt=!!(sheState.receipt && sheState.receipt.length);
+  document.getElementById("she-receiptonly-label").style.display=hasReceipt?"block":"none";
+  document.getElementById("she-receiptonly-wrap").style.display=hasReceipt?"block":"none";
+  if(hasReceipt){
+    const tbR=document.getElementById("she-tb-receiptonly");
+    tbR.innerHTML="";
+    receiptOnly.forEach((r,i)=>{
+      const tr=document.createElement("tr");
+      tr.className="bank-only";
+      tr.innerHTML=`
+        <td>${i+1}</td>
+        <td class="mono">${r.id}</td>
+        <td class="mono">${rocStr(r.dateKey)}</td>
+        <td class="mono right">${fmtMoney(r.amount)}</td>
+        <td class="mono">${r.last5||"—"}</td>
+        <td style="white-space:normal;max-width:320px;">${r.detail||"—"}</td>
+      `;
+      tbR.appendChild(tr);
+    });
+    if(!receiptOnly.length){
+      tbR.innerHTML=`<tr><td colspan="6" style="color:var(--ink-faint);text-align:center;padding:16px;">收款單都已對應到期別，或這個月份沒有收款單資料</td></tr>`;
+    }
   }
 
   // ── 缺租金資料提醒 ──

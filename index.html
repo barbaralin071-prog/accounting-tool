@@ -929,6 +929,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       <div class="actbar">
         <div class="bal" id="she-status">—</div>
         <div class="btns">
+          <button class="btn primary" id="she-btn-cashflow">⬇ 下載金流表</button>
           <button class="btn secondary" id="she-btn-reset">重新上傳</button>
         </div>
       </div>
@@ -5492,6 +5493,66 @@ document.getElementById("she-btn-download-unpaid").addEventListener("click",()=>
   XLSX.utils.book_append_sheet(wb, ws, "未繳租名單");
   const ymSuffix=ym?ym:"全部月份";
   XLSX.writeFile(wb, `社宅未繳租名單_${ymSuffix}_`+new Date().toISOString().slice(0,10)+".xlsx");
+});
+
+// 社宅收租金流表：跟房管處的做法一樣——把網銀存入的金額、順序原封不動複製過去，
+// 比對成功的那幾筆補上說明（案源地址-年月租金-房客姓名），
+// 比對不出來的標記【未核對－待查】，提醒出納要人工核對。
+const SHE_CASHFLOW_HEADER="仁愛分行 #13658 - 銀存明細　　社宅";
+function sheRocYM(ym){
+  const [y,m]=ym.split("-").map(Number);
+  return (y-1911)+pad2(m);
+}
+document.getElementById("she-btn-cashflow").addEventListener("click",()=>{
+  if(!sheState.bank||!sheState.bank.length){
+    showErr("she-err","請先上傳網銀金流表並完成比對");
+    return;
+  }
+
+  // 建立「網銀入帳 _bidx → 說明文字」的對照表（只有對到『真實網銀那一筆』的才會出現在這裡；
+  // 純靠收款單佐證、網銀裡根本找不到對應那一筆的，金流表本來就沒有它的位置，不會出現）
+  const summaryByBidx=new Map();
+  sheState.allMatched.forEach(item=>{
+    const bidx=item.bank._bidx;
+    if(typeof bidx!=="number") return; // "receipt_N" 這種虛擬的，不對應到任何一筆網銀
+    const due=item.due;
+    summaryByBidx.set(bidx, `${due.addr}-${sheRocYM(due.ym)}租金-${due.name}`);
+  });
+
+  const roc0=toRoc(sheState.bank[0].raw?sheState.bank[0].raw[0]:sheState.bank[0].dateKey);
+  const aoa=[];
+  aoa.push([roc0.year+"年", SHE_CASHFLOW_HEADER, null, null, null, null, null]);
+  aoa.push(["日期", null, "說明", "收入", "支出", "匯費", "餘額"]);
+
+  let unmatchedCount=0;
+  let lastDate="";
+  sheState.bank.forEach(b=>{
+    const roc=toRoc(b.raw?b.raw[0]:b.dateKey);
+    const dateStr=roc.month+"月"+roc.day+"日";
+    const dateCell=dateStr===lastDate?null:dateStr;
+
+    if(summaryByBidx.has(b._bidx)){
+      aoa.push([dateCell, summaryByBidx.get(b._bidx), null, b.amount, null, null, null]);
+    }else{
+      unmatchedCount++;
+      const last5info=[b.last5,b.partnerLast5].filter(Boolean).join("/");
+      const summary=`【未核對－待查】${b.note||"—"}${last5info?" 末五碼:"+last5info:""}`;
+      aoa.push([(dateCell?dateCell+" ★":null), summary, null, b.amount, null, null, null]);
+    }
+    lastDate=dateStr;
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"]=[{wch:12},{wch:42},{wch:12},{wch:12},{wch:10},{wch:8},{wch:12}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "社宅");
+  XLSX.writeFile(wb, "金流表_社宅_"+new Date().toISOString().slice(0,10)+".xlsx");
+
+  if(unmatchedCount>0){
+    showErr("she-err", `⚠ 金流表已下載，但其中有 ${unmatchedCount} 筆網銀入帳沒有比對成功（標記【未核對－待查】），請出納人工核對後再補上說明`);
+  }else{
+    clearErr("she-err");
+  }
 });
 </script>
 </div><!-- /app -->

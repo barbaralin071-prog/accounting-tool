@@ -4955,12 +4955,18 @@ function sheApplyResolutions(){
   let receiptOnly=sheState.rawReceiptOnly.slice();
 
   // ── 人工核對：把「網銀存入但無對應房客」／「收款單登記但對不上」
-  //    直接指定給某個未繳或待確認期別（不需要金額/日期剛好落在自動比對的窗口內）──
+  //    直接指定給某個未繳或待確認期別（不需要金額/日期剛好落在自動比對的窗口內）。
+  //    也允許取代「目前只靠收款單佐證、沒有連到實際網銀記錄」的比對成功項目——
+  //    這種情況常發生在：收款單先找到了人，但當時對應的那筆網銀入帳還沒被認領（例如日期/金額用了
+  //    加了費用的組合，跟原本比對用的金額層級不同），後來才在網銀存入表格裡浮現，
+  //    這時應該讓人工可以把它換成用真正的網銀入帳，而不是被卡住選不到。
   function pullDueByKey(dueKey){
     let idx=unmatched.findIndex(d=>d.dueKey===dueKey);
     if(idx>=0) return unmatched.splice(idx,1)[0];
     idx=pending.findIndex(a=>a.due.dueKey===dueKey);
     if(idx>=0) return pending.splice(idx,1)[0].due;
+    idx=matched.findIndex(m=>m.due.dueKey===dueKey && typeof m.bank._bidx!=="number");
+    if(idx>=0) return matched.splice(idx,1)[0].due;
     return null;
   }
 
@@ -5347,9 +5353,11 @@ function renderSheResult(){
 
   // ── 手動核對用：組出「目前未繳／待確認」的期別清單給下拉選單選，金額相符的排前面 ──
   function sheDueOptionsHtml(amount){
+    const receiptOnlyMatched=sheState.allMatched.filter(m=>typeof m.bank._bidx!=="number");
     const pool=[
       ...sheState.allUnmatched.map(d=>({due:d})),
       ...sheState.allAmbiguous.map(a=>({due:a.due})),
+      ...receiptOnlyMatched.map(m=>({due:m.due, receiptOnly:true})),
     ];
     const hitLevel=d=>{
       const m=sheAmountMatch(d, amount);
@@ -5365,7 +5373,8 @@ function renderSheResult(){
         const d=x.due;
         const m=sheAmountMatch(d, amount);
         const mark=m.ok?(m.isBase?"★ ":`☆${sheAmountNote(m)} `):"";
-        return `<option value="${d.dueKey}">${mark}${d.name}／${d.ym}／${fmtMoney(d.amount)}</option>`;
+        const suffix=x.receiptOnly?"（目前僅靠收款單佐證，可換成這筆網銀入帳）":"";
+        return `<option value="${d.dueKey}">${mark}${d.name}／${d.ym}／${fmtMoney(d.amount)}${suffix}</option>`;
       }).join("");
     return `<option value="">請選擇房客期別…</option>`+opts;
   }

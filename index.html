@@ -708,10 +708,14 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     <!-- 比對結果 -->
     <div id="biz-inv-result" hidden style="margin-top:16px;">
       <div class="card">
-        <div class="match-summary">
+        <div class="match-summary" style="grid-template-columns:repeat(3,1fr);">
           <div class="ms-cell ok">
             <div class="ms-num" id="biz-inv-cnt-matched">0</div>
             <div class="ms-lbl">✓ 比對成功</div>
+          </div>
+          <div class="ms-cell warn">
+            <div class="ms-num" id="biz-inv-cnt-ambiguous">0</div>
+            <div class="ms-lbl">❓ 金額組合重複待確認</div>
           </div>
           <div class="ms-cell warn">
             <div class="ms-num" id="biz-inv-cnt-unmatched">0</div>
@@ -733,7 +737,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
               <thead><tr>
                 <th>#</th><th>金流表說明</th><th class="right">金額</th>
                 <th>發票號碼</th><th>買受人</th>
-                <th class="right">未稅</th><th class="right">稅額</th><th>狀態</th>
+                <th class="right">未稅</th><th class="right">稅額</th><th>狀態</th><th>操作</th>
               </tr></thead>
               <tbody id="biz-inv-tb"></tbody>
             </table>
@@ -3811,6 +3815,8 @@ document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
 ══════════════════════════════════════ */
 
 // 解析業務處電子發票
+// 注意：這份匯出檔的欄位名稱跟原本預期的不同（沒有「案件地址」「買受人名稱」欄），
+// 客戶名稱在「客戶名稱」欄，地址則要從「發票備註」欄解析（格式：地址/客戶/服務費/未稅/稅額）。
 function parseBizInvoiceXlsx(data){
   const wb=XLSX.read(data,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];
@@ -3819,17 +3825,30 @@ function parseBizInvoiceXlsx(data){
   if(hi===-1)throw new Error("找不到「發票號碼」欄位");
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
+  // 相容兩種欄位命名：舊格式(案件地址/買受人名稱/服務費金額(未稅)...) 與新格式(發票備註/客戶名稱/小計（未稅）...)
+  const colAddr=col("案件地址");
+  const colBuyer=col("買受人名稱")>=0?col("買受人名稱"):col("客戶名稱");
+  const colUntaxed=col("服務費金額(未稅)")>=0?col("服務費金額(未稅)"):col("小計（未稅）");
+  const colTax=col("稅額")>=0?col("稅額"):col("營業稅");
+  const colTotal=col("服務費金額(含稅)")>=0?col("服務費金額(含稅)"):col("總金額");
+  const colNote=col("發票備註");
+
   return aoa.slice(hi+1).filter(r=>r[col("發票號碼")]!=null).map(r=>{
     let rocDateStr="";
     try{ rocDateStr=toRoc(r[col("發票日期")]).str; }catch(e){}
     const rocYear=rocDateStr?parseInt(rocDateStr.split("/")[0]):115;
+    // 地址優先抓「案件地址」欄；沒有的話從「發票備註」解析（用 / 分隔，第一段就是地址）
+    let caseAddr=colAddr>=0?String(r[colAddr]||"").trim():"";
+    if(!caseAddr && colNote>=0 && r[colNote]){
+      caseAddr=String(r[colNote]).split("/")[0].trim();
+    }
     return{
       invoiceNo:String(r[col("發票號碼")]).trim(),
-      caseAddr:String(r[col("案件地址")]||"").trim(),
-      buyerName:String(r[col("買受人名稱")]||"").trim(),
-      untaxed:Math.round(Number(r[col("服務費金額(未稅)")])||0),
-      tax:Math.round(Number(r[col("稅額")])||0),
-      total:Number(r[col("服務費金額(含稅)")])||0,
+      caseAddr,
+      buyerName:colBuyer>=0?String(r[colBuyer]||"").trim():"",
+      untaxed:Math.round(Number(r[colUntaxed])||0),
+      tax:Math.round(Number(r[colTax])||0),
+      total:Number(r[colTotal])||0,
       rocDateStr, rocYear,
     };
   });
@@ -3874,50 +3893,80 @@ function parseBizCashflowXlsx(data){
   return rows;
 }
 
-// 比對：案件地址＋金額(含稅)
+// 找出 items 裡加總剛好等於 target 的所有子集合組合（用 total 含稅金額加總）。
+// n 太大時（理論上同地址不會有太多張發票）設安全上限避免組合爆炸。
+function findInvoiceSubsetsWithSum(items, target){
+  const n=items.length;
+  if(n===0||n>18) return[];
+  const results=[];
+  for(let mask=1; mask<(1<<n); mask++){
+    let sum=0;
+    const subset=[];
+    for(let i=0;i<n;i++){
+      if(mask&(1<<i)){ sum+=Math.round(items[i].total); subset.push(items[i]); }
+    }
+    if(sum===Math.round(target)) results.push(subset);
+  }
+  return results;
+}
+
+// 比對：地址相符 + 金額子集合加總相符。
+// 因為沒辦法從發票本身分辨「屋主」還是「房客」，金流表一筆入帳常常是同地址
+// 好幾張發票（屋主服務費＋房客服務費，甚至合併多個地址）加總在一起，
+// 所以改成「同地址底下找哪些發票加起來剛好等於這筆入帳金額」，而不是逐張比對。
+// 如果同一筆入帳有超過一種組合都剛好加得出一樣的金額，不會自動亂猜，
+// 留在 ambiguous 讓人工挑選正確的組合。
 function reconcileBizInvoice(cashflowRows, invoices){
   const matched=[];
   const unmatched=[];
+  const ambiguous=[];
+  const usedInvoiceNos=new Set();
 
   const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
 
+  function addrMatch(cfAddr, invAddr){
+    if(!cfAddr||!invAddr) return false;
+    return cfAddr===invAddr||cfAddr.startsWith(invAddr)||invAddr.startsWith(cfAddr);
+  }
+
   for(const cfRow of serviceRows){
-    // 從說明欄抓地址（開頭到第一個「-」之前）
-    const addrPart=cfRow.desc.split("-")[0].trim();
+    // 一筆入帳可能合併了不只一個地址（原始格式用換行分隔，但金流表解析時換行已被壓成空白），
+    // 所以改用「每個服務費區塊」的邊界來切：地址區塊大致是「地址-屋主-服務費」或
+    // 「地址-屋主-服務費+房客-服務費」，用「服務費」後面接空白（代表換行處）來切下一個地址。
+    const addrLines=cfRow.desc
+      .split(/(?<=服務費)\s+(?=\S)/)
+      .map(chunk=>chunk.split("-")[0].trim())
+      .filter(Boolean);
 
-    // 比對：案件地址相符 + 買受人名字出現在金流表說明欄
-    const matchedInvs=invoices.filter(inv=>{
-      if(!inv.caseAddr) return false;
-      const addrMatch=cfRow.desc.startsWith(inv.caseAddr)||
-        inv.caseAddr.startsWith(addrPart)||
-        addrPart===inv.caseAddr;
-      const buyerMatch=inv.buyerName&&cfRow.desc.includes(inv.buyerName);
-      return addrMatch&&buyerMatch;
-    });
+    const candidates=invoices.filter(inv=>
+      !usedInvoiceNos.has(inv.invoiceNo)
+      && addrLines.some(addr=>addrMatch(addr, inv.caseAddr)));
 
-    if(matchedInvs.length===0){
+    if(candidates.length===0){
       unmatched.push(cfRow);
       continue;
     }
 
-    // 回填發票號碼到說明欄（若原本沒有）
-    const hasInvNo=cfRow.invNos.length>0;
-    let newDesc=cfRow.desc;
-    if(!hasInvNo){
-      const invNosStr=matchedInvs.map(inv=>inv.invoiceNo).join("-");
-      newDesc=`${cfRow.desc}-${invNosStr}`;
+    const subsets=findInvoiceSubsetsWithSum(candidates, cfRow.amount);
+
+    if(subsets.length===0){
+      unmatched.push(cfRow);
+    }else if(subsets.length===1){
+      const invs=subsets[0];
+      invs.forEach(inv=>usedInvoiceNos.add(inv.invoiceNo));
+      const hasInvNo=cfRow.invNos.length>0;
+      const invNosStr=invs.map(inv=>inv.invoiceNo).join("-");
+      const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
+      matched.push({cfRow:{...cfRow,desc:newDesc}, invs});
+    }else{
+      // 多種組合金額都剛好一樣，無法自動判定，交給人工從候選組合裡挑
+      ambiguous.push({cfRow, subsets});
     }
-
-    // 判斷屋主/房客
-    const isOwner=cfRow.desc.includes("屋主");
-    const isTenant=cfRow.desc.includes("房客");
-
-    matched.push({cfRow:{...cfRow,desc:newDesc},invs:matchedInvs,isOwner,isTenant});
   }
-  return{matched,unmatched};
+  return{matched, unmatched, ambiguous};
 }
 
-let bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[]};
+let bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[]};
 
 // ── 業務處金流表 → 傳票 ──
 const bizCf2vState={cashflow:null,invoices:null};
@@ -4041,11 +4090,25 @@ document.getElementById("biz-inv-btn-match").addEventListener("click",()=>{
   const res=reconcileBizInvoice(bizInvState.cashflow,bizInvState.invoices);
   bizInvState.matched=res.matched;
   bizInvState.unmatched=res.unmatched;
+  bizInvState.ambiguous=res.ambiguous;
   renderBizInvResult();
 });
 
+// 待確認：人工挑選正確的發票組合
+function bizInvResolveAmbiguous(idx, subsetIdx){
+  const item=bizInvState.ambiguous[idx];
+  if(!item) return;
+  const invs=item.subsets[subsetIdx];
+  const hasInvNo=item.cfRow.invNos.length>0;
+  const invNosStr=invs.map(inv=>inv.invoiceNo).join("-");
+  const newDesc=hasInvNo?item.cfRow.desc:`${item.cfRow.desc}-${invNosStr}`;
+  bizInvState.matched.push({cfRow:{...item.cfRow,desc:newDesc}, invs});
+  bizInvState.ambiguous.splice(idx,1);
+  renderBizInvResult();
+}
+
 document.getElementById("biz-inv-btn-reset").addEventListener("click",()=>{
-  bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[]};
+  bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[]};
   ["biz-inv-dz-cashflow","biz-inv-dz-invoice"].forEach(id=>{
     const dz=document.getElementById(id);
     dz.classList.remove("loaded");
@@ -4065,16 +4128,17 @@ function renderBizInvResult(){
   document.getElementById("biz-inv-tb-wrap").hidden=true;
   document.getElementById("biz-inv-toggle").textContent="▶";
 
-  const{matched,unmatched}=bizInvState;
+  const{matched,unmatched,ambiguous}=bizInvState;
   document.getElementById("biz-inv-cnt-matched").textContent=matched.length;
   document.getElementById("biz-inv-cnt-unmatched").textContent=unmatched.length;
+  document.getElementById("biz-inv-cnt-ambiguous").textContent=ambiguous.length;
 
   const tb=document.getElementById("biz-inv-tb");
   tb.innerHTML="";
   matched.forEach((item,i)=>{
     const{cfRow,invs}=item;
     const invNosStr=invs.map(inv=>inv.invoiceNo).join("、");
-    const buyersStr=invs.map(inv=>inv.buyerName).join("、");
+    const buyersStr=invs.map(inv=>inv.buyerName||"（無名稱／屋主？）").join("、");
     const totalUntax=invs.reduce((s,inv)=>s+inv.untaxed,0);
     const totalTax=invs.reduce((s,inv)=>s+inv.tax,0);
     const tr=document.createElement("tr");
@@ -4088,6 +4152,28 @@ function renderBizInvResult(){
       <td class="mono right">${fmtMoney(Math.round(totalUntax))}</td>
       <td class="mono right">${fmtMoney(Math.round(totalTax))}</td>
       <td><span class="tag ok">✓ 比對成功</span></td>
+      <td>—</td>
+    `;
+    tb.appendChild(tr);
+  });
+  ambiguous.forEach((item,i)=>{
+    const{cfRow,subsets}=item;
+    const optsHtml=subsets.map((invs,si)=>{
+      const label=invs.map(inv=>`${inv.invoiceNo}(${inv.buyerName||"無名稱"}/${fmtMoney(inv.total)})`).join("+");
+      return `<div style="margin-bottom:4px;">
+        <button class="btn secondary biz-inv-pick-btn" data-idx="${i}" data-subset="${si}" style="padding:3px 9px;font-size:11px;">✓ 選這組</button>
+        <span style="font-size:12px;">${label}</span>
+      </div>`;
+    }).join("");
+    const tr=document.createElement("tr");
+    tr.className="unmatched";
+    tr.innerHTML=`
+      <td>${matched.length+i+1}</td>
+      <td style="max-width:220px;white-space:normal;">${cfRow.desc}</td>
+      <td class="mono right">${fmtMoney(cfRow.amount)}</td>
+      <td colspan="4" style="white-space:normal;min-width:280px;">${optsHtml}</td>
+      <td><span class="tag warn">❓ 金額組合重複</span></td>
+      <td>—</td>
     `;
     tb.appendChild(tr);
   });
@@ -4095,14 +4181,20 @@ function renderBizInvResult(){
     const tr=document.createElement("tr");
     tr.className="unmatched";
     tr.innerHTML=`
-      <td>${matched.length+i+1}</td>
+      <td>${matched.length+ambiguous.length+i+1}</td>
       <td style="max-width:220px;white-space:normal;">${cfRow.desc}</td>
       <td class="mono right">${fmtMoney(cfRow.amount)}</td>
       <td colspan="3" style="color:var(--ink-faint);">—</td>
       <td></td>
       <td><span class="tag warn">未比對到發票</span></td>
+      <td>—</td>
     `;
     tb.appendChild(tr);
+  });
+  tb.querySelectorAll(".biz-inv-pick-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      bizInvResolveAmbiguous(Number(btn.dataset.idx), Number(btn.dataset.subset));
+    });
   });
 
   const totalAmt=matched.reduce((s,m)=>s+m.cfRow.amount,0);

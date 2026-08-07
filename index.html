@@ -3867,10 +3867,17 @@ function parseBizCashflowXlsx(data){
   for(const r of aoa){
     // 日期欄位解析，轉成民國格式 115/06/01
     if(r[0]!=null){
+      let handled=false;
       try{
         const roc=toRoc(r[0]);
-        currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
-      }catch(e){
+        if(!isNaN(roc.year)&&!isNaN(roc.month)&&!isNaN(roc.day)){
+          currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+          handled=true;
+        }
+      }catch(e){}
+      if(!handled){
+        // toRoc 對「7月22日」這種純文字日期不會拋例外，而是靜默產生 NaN，
+        // 所以要另外檢查解析結果有沒有效，無效才退回這個文字格式解析
         const s=String(r[0]).trim();
         const mMatch=s.match(/^(\d+)月(\d+)日$/);
         if(mMatch){
@@ -3888,7 +3895,7 @@ function parseBizCashflowXlsx(data){
     const invNos=[];
     const invMatches=desc.matchAll(/([A-Z]{2}[\-\d]+)/g);
     for(const m of invMatches) invNos.push(m[1]);
-    rows.push({date:currentDate, desc, amount:income, invNos, raw:r});
+    rows.push({date:currentDate, desc, amount:income, invNos, raw:r, _cidx:rows.length});
   }
   return rows;
 }
@@ -3916,6 +3923,22 @@ function findInvoiceSubsetsWithSum(items, target){
 // 所以改成「同地址底下找哪些發票加起來剛好等於這筆入帳金額」，而不是逐張比對。
 // 如果同一筆入帳有超過一種組合都剛好加得出一樣的金額，不會自動亂猜，
 // 留在 ambiguous 讓人工挑選正確的組合。
+// 組出比對成功後金流表說明欄的標準格式：
+// 「案件地址-買受人名稱-服務費-發票號碼」，多張發票用「+」串接；
+// 如果這筆入帳合併了不只一個地址，各地址分段落列出。
+function bizBuildMatchedDesc(invs){
+  const groups=new Map();
+  invs.forEach(inv=>{
+    const key=inv.caseAddr||"";
+    if(!groups.has(key)) groups.set(key,[]);
+    groups.get(key).push(inv);
+  });
+  return[...groups.entries()].map(([addr,list])=>{
+    const parts=list.map(inv=>`${inv.buyerName||"—"}-服務費-${inv.invoiceNo}`).join("+");
+    return `${addr}-${parts}`;
+  }).join("\n");
+}
+
 function reconcileBizInvoice(cashflowRows, invoices){
   const matched=[];
   const unmatched=[];
@@ -3954,9 +3977,7 @@ function reconcileBizInvoice(cashflowRows, invoices){
     }else if(subsets.length===1){
       const invs=subsets[0];
       invs.forEach(inv=>usedInvoiceNos.add(inv.invoiceNo));
-      const hasInvNo=cfRow.invNos.length>0;
-      const invNosStr=invs.map(inv=>inv.invoiceNo).join("-");
-      const newDesc=hasInvNo?cfRow.desc:`${cfRow.desc}-${invNosStr}`;
+      const newDesc=bizBuildMatchedDesc(invs);
       matched.push({cfRow:{...cfRow,desc:newDesc}, invs});
     }else{
       // 多種組合金額都剛好一樣，無法自動判定，交給人工從候選組合裡挑
@@ -4099,9 +4120,7 @@ function bizInvResolveAmbiguous(idx, subsetIdx){
   const item=bizInvState.ambiguous[idx];
   if(!item) return;
   const invs=item.subsets[subsetIdx];
-  const hasInvNo=item.cfRow.invNos.length>0;
-  const invNosStr=invs.map(inv=>inv.invoiceNo).join("-");
-  const newDesc=hasInvNo?item.cfRow.desc:`${item.cfRow.desc}-${invNosStr}`;
+  const newDesc=bizBuildMatchedDesc(invs);
   bizInvState.matched.push({cfRow:{...item.cfRow,desc:newDesc}, invs});
   bizInvState.ambiguous.splice(idx,1);
   renderBizInvResult();
@@ -4212,18 +4231,11 @@ document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
   const cf=bizInvState.cashflow;
   if(!cf) return;
 
-  // 建立 index→新說明 的對應（reconcileBizInvoice 已回填發票號碼到 cfRow.desc）
+  // 建立 index→新說明 的對應（用 parseBizCashflowXlsx 給的穩定索引 _cidx 直接對應，
+  // 不再靠文字比對回推，因為比對成功後的說明文字格式已經跟原始金流表不一樣了）
   const descByIdx=new Map();
   bizInvState.matched.forEach(item=>{
-    // 找原始 cf 裡對應的 index（用金額和說明開頭比對）
-    const origDesc=item.cfRow.desc
-      .replace(/-[A-Z]{2}[\-\d]+/g,"")  // 去掉發票號碼
-      .replace(/-+$/,"").trim();
-    const idx=cf.findIndex(r=>
-      r.amount===item.cfRow.amount&&
-      origDesc.startsWith(r.desc.split("-")[0].trim())
-    );
-    if(idx>=0) descByIdx.set(idx, item.cfRow.desc);
+    if(item.cfRow._cidx!=null) descByIdx.set(item.cfRow._cidx, item.cfRow.desc);
   });
 
   const aoa=[];
@@ -4259,8 +4271,8 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     const mMatch=dateStr.match(/^(\d+)月(\d+)日$/);
     if(mMatch) dateStr=`${rocYear}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
 
-    // 借方摘要：用金流表說明（去掉發票號碼部分）
-    const debitSummary=cfRow.desc.replace(/-[A-Z]{2}[\-\d]+/g,"").replace(/-+$/,"").trim();
+    // 借方摘要：直接用金流表說明（已經是「地址-買受人-服務費-發票號碼」的乾淨格式）
+    const debitSummary=cfRow.desc;
 
     // 借方：1110-02 全額
     rows.push([rocYear,"DEFAULT",3,dateStr,"1110-02","",1,cfRow.amount,debitSummary]);

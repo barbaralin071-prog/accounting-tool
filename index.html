@@ -4187,7 +4187,8 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     }
 
     const addr=invs[0].caseAddr||cfRow.desc.split("-")[0];
-    const rocYear=invs[0].rocYear||115;
+    // 年度也用金流表上的日期推算，跟傳票日期保持一致（不用發票的年度）
+    const rocYear=cfRow.date?(parseInt(cfRow.date.split("/")[0])||115):(invs[0].rocYear||115);
 
     // 日期格式轉換：「6月1日」→「115/06/01」
     let dateStr=cfRow.date||TODAY_ROC;
@@ -4200,14 +4201,14 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     // 借方：1110-02 全額
     rows.push([rocYear,"DEFAULT",3,dateStr,"1110-02","",1,cfRow.amount,debitSummary,"",liChong("1110-02")]);
 
-    // 每張發票兩列貸方
+    // 每張發票兩列貸方（日期一律用金流表上的日期，不用發票日期）
     invs.forEach(inv=>{
       const buyerName=inv.buyerName||"";
       const s1=`${addr}-${buyerName}-服務費`;
       const s2=`${addr}-${buyerName}-服務費-${inv.invoiceNo}`;
-      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"4101-03","",2,
+      rows.push([rocYear,"DEFAULT",3,dateStr,"4101-03","",2,
         Math.round(inv.untaxed),s1,"003",liChong("4101-03")]);
-      rows.push([rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"2290","",2,
+      rows.push([rocYear,"DEFAULT",3,dateStr,"2290","",2,
         Math.round(inv.tax),s2,"",liChong("2290")]);
     });
   });

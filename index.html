@@ -5543,6 +5543,13 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     return;
   }
 
+  // 下載傳票前先檢查這個月還有沒有「帳務尚未查明」的網銀入帳／收款單——
+  // 傳票只會抓已經比對成功的部分，還卡在待確認/網銀無對應的錢不會出現在傳票裡，
+  // 先提醒出納把這個月的對帳處理完，避免傳票漏掉還沒查清楚的入帳。
+  const pendingBankOnly=sheState.allBankOnly.filter(b=>sheYmOfDateKey(b.dateKey)===ym);
+  const pendingAmbiguous=sheState.allAmbiguous.filter(a=>a.due.ym===ym);
+  const pendingCount=pendingBankOnly.length+pendingAmbiguous.length;
+
   const{receiveRows,payRows,warnings}=sheBuildVoucherRows(ym);
 
   if(!receiveRows.length && !payRows.length){
@@ -5579,10 +5586,18 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
 
   const warnEl=document.getElementById("she-voucher-warn");
   const fileNote=`共下載 ${receiveFileCount} 份收房客租金傳票（依入帳日期各自一份）、${payFileCount} 份付屋主傳票`;
-  if(warnings.length){
+
+  const pendingNote=pendingCount>0
+    ?`<br><br>🔴 <strong>${ym} 這個月還有 ${pendingCount} 筆帳務尚未查明</strong>（網銀存入但無對應房客 ${pendingBankOnly.length} 筆、金額重複待確認 ${pendingAmbiguous.length} 筆），這些錢目前不會出現在傳票裡。建議先回到上面的比對結果，把這些筆處理完（用手動核對／選這筆）之後再重新下載一次傳票，確保這個月的錢都有交代：<br>`+
+      [...pendingBankOnly.map(b=>`・網銀入帳 ${rocStr(b.dateKey)}／${fmtMoney(b.amount)}／備註:${b.note||"—"}`),
+       ...pendingAmbiguous.map(a=>`・待確認 ${a.due.name}／${a.due.ym}／${fmtMoney(a.due.amount)}（${a.candidates.length}筆候選）`)].join("<br>")
+    :"";
+
+  if(warnings.length||pendingCount>0){
     warnEl.style.display="block";
-    warnEl.innerHTML=`⚠ ${fileNote}（收房客租金 ${receiveRows.length} 列、付屋主 ${payRows.length} 列），但有 <strong>${warnings.length}</strong> 筆需要人工處理，沒有包含在下載的傳票裡：<br><br>`+
-      warnings.map(w=>`・${w}`).join("<br>");
+    warnEl.innerHTML=`⚠ ${fileNote}（收房客租金 ${receiveRows.length} 列、付屋主 ${payRows.length} 列）`+
+      (warnings.length?`，但有 <strong>${warnings.length}</strong> 筆需要人工處理，沒有包含在下載的傳票裡：<br><br>`+warnings.map(w=>`・${w}`).join("<br>"):"")+
+      pendingNote;
   }else{
     warnEl.style.display="block";
     warnEl.innerHTML=fileNote;

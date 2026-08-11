@@ -5398,7 +5398,8 @@ document.getElementById("she-btn-cashflow").addEventListener("click",()=>{
 /* ══════════════════════════════════════
    社宅 → 傳票匯入
    ── 規則說明（已與人工多輪確認）──
-   摘要格式：地址-年月租金-姓名
+   摘要格式：地址-年月租金-姓名（涉及屋主時姓名前面要加「屋主」二字，例如「屋主陳駿元」）
+   代扣二代健保那一列摘要固定是：凌群-代扣(地址-年月租金-屋主XXX)（注意「凌群」跟「代扣」中間有連字號）
 
    收房客租金（不論何時收到）：
    ・租金<20,000（不扣二代健保）：
@@ -5407,12 +5408,12 @@ document.getElementById("she-btn-cashflow").addEventListener("click",()=>{
    ・租金≥20,000（要扣2.11%二代健保）：
        1110-04    借1（承租人，實收金額，N）
        131450-01  貸2（屋主，實收金額－租金×2.11%，Y）
-       2205-01    貸2（凌群代扣-屋主，租金×2.11%，Y）
+       2205-01    貸2（凌群-代扣(...屋主)，租金×2.11%，Y）
 
    1號付屋主：
    ・房客已在1號前先繳（錢已經在2205-01/131450-01）：
        不扣健保：2205-01 借1（房客，全額，Y）／1110-01 貸2（屋主，全額，N）
-       要扣健保：2205-01 借1（房客，全額，Y）／1110-01 貸2（屋主，全額－租金×2.11%，N）／2205-01 貸2（凌群代扣-屋主，租金×2.11%，Y）
+       要扣健保：2205-01 借1（房客，全額，Y）／1110-01 貸2（屋主，全額－租金×2.11%，N）／2205-01 貸2（凌群-代扣屋主，租金×2.11%，Y）
    ・房客到1號還沒繳，公司墊付：
        不扣健保：131450-01 借1（屋主，純租金，Y）／1110-01 貸2（屋主，純租金，N）
        要扣健保：⚠ 目前無實際案例可依循，不自動產生分錄，列入需人工處理
@@ -5468,8 +5469,8 @@ function sheBuildVoucherRows(targetYm){
     }else{
       const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
       receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
-      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
     }
   });
 
@@ -5508,12 +5509,12 @@ function sheBuildVoucherRows(targetYm){
       // 1號付屋主（房客已先繳）
       if(!needsInsurance){
         payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
       }else{
         const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
         payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
       }
     }else{
       // 房客到1號還沒繳，公司墊付
@@ -5521,8 +5522,8 @@ function sheBuildVoucherRows(targetYm){
         warnings.push(`「${tenant.name}」（${addrLabel}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但截至 ${rocYm} 這期還沒收到房客租金——「要扣健保＋公司墊付」這種組合目前沒有實際案例可依循分錄，請人工處理`);
         return;
       }
-      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
-      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
     }
   });
 

@@ -5436,7 +5436,7 @@ function sheBuildVoucherRows(targetYm){
   // ══ 區塊一：收房客租金（13658帳戶）── 照網銀金流表房客實際入帳的順序 ══
   // 只有「有房客入帳、且對到真實網銀那一筆」的才會出現在這裡；
   // 純靠收款單佐證、網銀裡根本找不到對應那一筆的，沒有入帳順序可循，附加在最後（用應繳日期排）。
-  // 收房客租金這一步固定用簡單分錄（不判斷健保門檻，健保代扣是1號付屋主那一步才處理的事）。
+  // 跟付屋主一樣，也要看媒合資料的租金欄位判斷要不要扣二代健保。
   const matchedForYm=sheState.allMatched.filter(m=>m.due.ym===targetYm);
   const withBank=matchedForYm.filter(m=>typeof m.bank._bidx==="number");
   const withoutBank=matchedForYm.filter(m=>typeof m.bank._bidx!=="number");
@@ -5446,6 +5446,13 @@ function sheBuildVoucherRows(targetYm){
   [...withBank, ...withoutBank].forEach(item=>{
     const tenant=SHEZHAI_TENANTS.find(t=>t.id===item.due.tenantId);
     if(!tenant) return;
+    const o=SHE_LANDLORD_BY_TENANT[tenant.id];
+    const needsInsurance=tenant.rent>=SHE_INSURANCE_THRESHOLD;
+    if(needsInsurance && !o){
+      warnings.push(`「${tenant.name}」（${tenant.addr}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但在屋主匯款順序清單裡找不到對應的屋主資訊，這筆「收房客租金」的分錄需要人工補上屋主姓名`);
+      return;
+    }
+    const landlord=o?o.landlord:null;
     const addrLabel=tenant.addr;
     const paidDateKey=item.bank.dateKey;
     const receivedAmt=item.bank.amount;
@@ -5458,8 +5465,15 @@ function sheBuildVoucherRows(targetYm){
     }
 
     const recvDateStr=rocStr(paidDateKey);
-    receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-    receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+    if(!needsInsurance){
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+    }else{
+      const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
+    }
   });
 
   // ══ 區塊二：付屋主（14432帳戶）── 照屋主清單固定順序，每月1號一次出款53筆 ══

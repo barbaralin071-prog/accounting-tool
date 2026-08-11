@@ -5423,7 +5423,8 @@ const SHE_INSURANCE_RATE=0.0211;
 const SHE_INSURANCE_THRESHOLD=20000;
 
 function sheBuildVoucherRows(targetYm){
-  const rows=[];
+  const receiveRows=[]; // 13658 收房客租金：照網銀入帳順序
+  const payRows=[];     // 14432 付屋主：照屋主清單順序
   const warnings=[];
   const [ty,tm]=targetYm.split("-").map(Number);
   const firstOfMonthKey=ty*10000+tm*100+1;
@@ -5431,7 +5432,48 @@ function sheBuildVoucherRows(targetYm){
   const firstDateStr=`${rocYear}/${pad2(tm)}/01`;
   const rocYm=sheRocYM(targetYm);
 
-  // 依屋主匯款順序排列；清單裡沒有的物件排在最後，並個別提醒
+  // ══ 區塊一：收房客租金（13658帳戶）── 照網銀金流表房客實際入帳的順序 ══
+  // 只有「有房客入帳、且對到真實網銀那一筆」的才會出現在這裡；
+  // 純靠收款單佐證、網銀裡根本找不到對應那一筆的，沒有入帳順序可循，附加在最後（用應繳日期排）。
+  const matchedForYm=sheState.allMatched.filter(m=>m.due.ym===targetYm);
+  const withBank=matchedForYm.filter(m=>typeof m.bank._bidx==="number");
+  const withoutBank=matchedForYm.filter(m=>typeof m.bank._bidx!=="number");
+  withBank.sort((a,b)=>a.bank._bidx-b.bank._bidx);
+  withoutBank.sort((a,b)=>a.due.dateKey-b.due.dateKey);
+
+  [...withBank, ...withoutBank].forEach(item=>{
+    const tenant=SHEZHAI_TENANTS.find(t=>t.id===item.due.tenantId);
+    if(!tenant) return;
+    const o=SHE_LANDLORD_BY_TENANT[tenant.id];
+    if(!o){
+      warnings.push(`「${tenant.name}」（${tenant.addr}）在屋主匯款順序清單裡找不到對應的屋主資訊，這筆的「收房客租金」分錄需要人工補上屋主姓名`);
+      return;
+    }
+    const landlord=o.landlord;
+    const addrLabel=tenant.addr;
+    const needsInsurance=tenant.rent>=SHE_INSURANCE_THRESHOLD;
+    const paidDateKey=item.bank.dateKey;
+    const receivedAmt=item.bank.amount;
+    const tenantName=tenant.name;
+
+    if(paidDateKey>firstOfMonthKey){
+      warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），這種「沖銷公司墊款」的分錄尚未確認過，請人工處理`);
+      return;
+    }
+
+    const recvDateStr=rocStr(paidDateKey);
+    if(!needsInsurance){
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+    }else{
+      const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
+      receiveRows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+    }
+  });
+
+  // ══ 區塊二：付屋主（14432帳戶）── 照屋主清單固定順序，每月1號一次出款53筆 ══
   const withOrder=[];
   const withoutOrder=[];
   SHEZHAI_TENANTS.forEach(t=>{
@@ -5445,7 +5487,7 @@ function sheBuildVoucherRows(targetYm){
   queue.forEach(({tenant,landlord})=>{
     if(tenant.rent==null) return; // 沒有租金資料的房客這裡先跳過
     if(!landlord){
-      warnings.push(`「${tenant.name}」（${tenant.addr}）在屋主匯款順序清單裡找不到對應的屋主資訊，這筆需要人工補上屋主姓名與付款順序`);
+      warnings.push(`「${tenant.name}」（${tenant.addr}）在屋主匯款順序清單裡找不到對應的屋主資訊，這筆「付屋主」的分錄需要人工補上屋主姓名與付款順序`);
       return;
     }
 
@@ -5459,32 +5501,19 @@ function sheBuildVoucherRows(targetYm){
       const tenantName=tenant.name;
 
       if(paidDateKey>firstOfMonthKey){
-        warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），這種「沖銷公司墊款」的分錄尚未確認過，請人工處理`);
+        // 已經在區塊一標記過同一件事，這裡不重複警告，直接跳過
         return;
       }
 
-      const recvDateStr=rocStr(paidDateKey);
-
-      // ① 收房客租金
+      // 1號付屋主（房客已先繳）
       if(!needsInsurance){
-        rows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-        rows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
       }else{
         const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-        rows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-        rows.push([rocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
-        rows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
-      }
-
-      // ② 1號付屋主（房客已先繳）
-      if(!needsInsurance){
-        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
-      }else{
-        const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
-        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
       }
     }else{
       // 房客到1號還沒繳，公司墊付
@@ -5492,12 +5521,12 @@ function sheBuildVoucherRows(targetYm){
         warnings.push(`「${tenant.name}」（${addrLabel}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但截至 ${rocYm} 這期還沒收到房客租金——「要扣健保＋公司墊付」這種組合目前沒有實際案例可依循分錄，請人工處理`);
         return;
       }
-      rows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
-      rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
     }
   });
 
-  return{rows, warnings};
+  return{receiveRows, payRows, warnings};
 }
 
 document.getElementById("she-btn-voucher").addEventListener("click",()=>{
@@ -5511,24 +5540,33 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     return;
   }
 
-  const{rows,warnings}=sheBuildVoucherRows(ym);
+  const{receiveRows,payRows,warnings}=sheBuildVoucherRows(ym);
 
-  if(!rows.length){
+  if(!receiveRows.length && !payRows.length){
     showErr("she-err",`${ym} 沒有可以產生傳票的資料`);
     return;
   }
 
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+  const COLS=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+
+  // 分頁一：收房客租金（13658帳戶）── 照網銀入帳順序
+  const wsReceive=XLSX.utils.aoa_to_sheet([HEADERS, ...receiveRows]);
+  wsReceive["!cols"]=COLS;
+  XLSX.utils.book_append_sheet(wb, wsReceive, "收房客租金-13658");
+
+  // 分頁二：付屋主（14432帳戶）── 照屋主清單固定順序，方便會計一次大量匯入53筆
+  const wsPay=XLSX.utils.aoa_to_sheet([HEADERS, ...payRows]);
+  wsPay["!cols"]=COLS;
+  XLSX.utils.book_append_sheet(wb, wsPay, "付屋主-14432");
+
   XLSX.writeFile(wb, `傳票匯入_社宅_${ym}_`+new Date().toISOString().slice(0,10)+".xlsx");
 
   const warnEl=document.getElementById("she-voucher-warn");
   if(warnings.length){
     warnEl.style.display="block";
-    warnEl.innerHTML=`⚠ 傳票已下載，但有 <strong>${warnings.length}</strong> 筆需要人工處理，沒有包含在下載的傳票裡：<br><br>`+
+    warnEl.innerHTML=`⚠ 傳票已下載（收房客租金 ${receiveRows.length} 列、付屋主 ${payRows.length} 列），但有 <strong>${warnings.length}</strong> 筆需要人工處理，沒有包含在下載的傳票裡：<br><br>`+
       warnings.map(w=>`・${w}`).join("<br>");
   }else{
     warnEl.style.display="none";

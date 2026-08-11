@@ -897,11 +897,13 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </div>
 
       <div class="hint" id="she-norent-hint" style="display:none;"></div>
+      <div class="hint" id="she-voucher-warn" style="display:none;"></div>
 
       <div class="actbar">
         <div class="bal" id="she-status">—</div>
         <div class="btns">
           <button class="btn primary" id="she-btn-cashflow">⬇ 下載金流表</button>
+          <button class="btn primary" id="she-btn-voucher">⬇ 下載社宅傳票</button>
           <button class="btn secondary" id="she-btn-reset">重新上傳</button>
         </div>
       </div>
@@ -952,6 +954,13 @@ function sheNormalizeAddr(addr){
 }
 const SHEZHAI_ADDR_MAP={};
 SHEZHAI_TENANTS.forEach(t=>{ SHEZHAI_ADDR_MAP[sheNormalizeAddr(t.addr)]=t; });
+
+// 屋主匯款順序清單：出納每月1號付款給屋主的固定順序（依 tenantId 對應），
+// order 數字越小代表越早付款。找不到 tenantId 的（landlordOnlyMissing）代表這筆清單裡的地址，
+// 目前 53 筆媒合資料中沒有對應到的物件，傳票功能會跳過並提醒人工確認。
+const SHE_LANDLORD_ORDER = [{"order":0,"tenantId":"凌群新北B2M30400171-1","landlord":"呂晏妮"},{"order":1,"tenantId":"凌群台北A2M34100011-1","landlord":"陳淑慧"},{"order":2,"tenantId":"凌群新北B2M34100042-1","landlord":"朱美麗"},{"order":3,"tenantId":"凌群台北A2M34100053-1","landlord":"胡登祐"},{"order":4,"tenantId":"凌群台北A2M34100051-1","landlord":"陳美椀"},{"order":5,"tenantId":"凌群新北B2M34100040-1","landlord":"黃意媜"},{"order":6,"tenantId":"凌群新北B2M34100044-1","landlord":"蔡君慧"},{"order":7,"tenantId":"凌群台北A2M34100065-1","landlord":"林宜君"},{"order":8,"tenantId":"凌群台北A2M34100066-1","landlord":"謝采之"},{"order":9,"tenantId":"凌群台北A2M34100175","landlord":"賴靜芸"},{"order":10,"tenantId":"凌群台北A2M34100103-1","landlord":"蔡曉萍"},{"order":11,"tenantId":"凌群台北A2M34100102-1","landlord":"陳琬淇"},{"order":12,"tenantId":"X052","landlord":"張榮芳"},{"order":13,"tenantId":"X051","landlord":"陳育民"},{"order":14,"tenantId":"凌群新北B2M34100093-1","landlord":"葉怡欣"},{"order":15,"tenantId":"凌群新北B2M34100106-1","landlord":"林明"},{"order":16,"tenantId":"凌群新北B2M30400176","landlord":"吳黃瓊足"},{"order":17,"tenantId":"凌群新北B2M30500001","landlord":"蕭喬禕"},{"order":18,"tenantId":"凌群新北B2M30500009","landlord":"李冠賢"},{"order":19,"tenantId":"凌群臺北A2M30500011","landlord":"邱志松"},{"order":20,"tenantId":"凌群臺北A2M30500013","landlord":"周翁鼎"},{"order":21,"tenantId":"凌群臺北A2M30500023","landlord":"胡茂強"},{"order":22,"tenantId":"凌群臺北A2M30500014","landlord":"蔡榮隆"},{"order":23,"tenantId":"凌群臺北A2M30500031","landlord":"葉燕芬"},{"order":24,"tenantId":"凌群臺北A2M30500035","landlord":"壽玉琪"},{"order":25,"tenantId":"凌群新北B2M30500032","landlord":"連俐禎"},{"order":26,"tenantId":"凌群新北B2M30500032","landlord":"連俐禎"},{"order":27,"tenantId":"凌群臺北A2M30500058","landlord":"潘彩暖"},{"order":28,"tenantId":"凌群臺北A2M30500029","landlord":"陳泠君"},{"order":29,"tenantId":"凌群新北B2M30500043","landlord":"陳怡君"},{"order":30,"tenantId":"凌群臺北A2M3050011200001","landlord":"蔡榮隆"},{"order":31,"tenantId":"凌群臺北A2M30500064","landlord":"許淑芳"},{"order":32,"tenantId":"凌群臺北A2M30500077","landlord":"陳好欸"},{"order":33,"tenantId":"凌群新北B2M30500071","landlord":"王文義"},{"order":34,"tenantId":"凌群新北B2M30500075","landlord":"江軍岳"},{"order":35,"tenantId":"凌群新北B2M30500076","landlord":"張瓊宇"},{"order":36,"tenantId":"凌群台北A2M34100020-1","landlord":"林依嫻"},{"order":37,"tenantId":"凌群台北A2M34100143","landlord":"張志明"},{"order":38,"tenantId":"凌群新北B2M34100015-1","landlord":"陳仕彥"},{"order":39,"tenantId":"凌群台北A2M34100007-1","landlord":"廖麗珠"},{"order":40,"tenantId":"凌群台北A2M34100042-1","landlord":"張憲英"},{"order":41,"tenantId":"凌群台北A2M34100056-1","landlord":"倪麗琴"},{"order":42,"tenantId":"凌群台北A2M34100110-1","landlord":"李思萱"},{"order":43,"tenantId":"凌群新北B2M34100019-1","landlord":"李彩妘"},{"order":44,"tenantId":"凌群台北A2M34100013-1","landlord":"黃鳳英"},{"order":45,"tenantId":"凌群台北A2M34100174","landlord":"許家維"},{"order":46,"tenantId":"凌群台北A2M34100154","landlord":"施蘭英"},{"order":47,"tenantId":"凌群臺北A2M30500009","landlord":"陳駿元"},{"order":48,"tenantId":"凌群臺北A2M30500008","landlord":"石柯美英"},{"order":49,"tenantId":"凌群台北A2M30500094","landlord":"楊媚"},{"order":50,"tenantId":"凌群新北B2M30500109","landlord":"汪惟年"},{"order":51,"tenantId":"凌群新北B2M30500097","landlord":"蔡朝固"},{"order":52,"tenantId":"凌群新北B2M30500101","landlord":"陳甯禎"}];
+const SHE_LANDLORD_BY_TENANT = {};
+SHE_LANDLORD_ORDER.forEach(o=>{ if(o.tenantId) SHE_LANDLORD_BY_TENANT[o.tenantId]=o; });
 
 // 金額階梯：租金最優先（最單純、最不容易跟別人撞號，搭配姓名核對最有信心），
 // 對不上才逐步加管理費／停車費／其他費用進去試，最後才是全額（租金＋全部房客負擔的費用）。
@@ -5383,6 +5392,146 @@ document.getElementById("she-btn-cashflow").addEventListener("click",()=>{
     showErr("she-err", `⚠ 金流表已下載，但其中有 ${unmatchedCount} 筆網銀入帳沒有比對成功（標記【未核對－待查】），請出納人工核對後再補上說明`);
   }else{
     clearErr("she-err");
+  }
+});
+
+/* ══════════════════════════════════════
+   社宅 → 傳票匯入
+   ── 規則說明（已與人工多輪確認）──
+   摘要格式：地址-年月租金-姓名
+
+   收房客租金（不論何時收到）：
+   ・租金<20,000（不扣二代健保）：
+       1110-04 借1（承租人，實收金額，N）
+       2205-01 貸2（承租人，實收金額，Y）
+   ・租金≥20,000（要扣2.11%二代健保）：
+       1110-04    借1（承租人，實收金額，N）
+       131450-01  貸2（屋主，實收金額－租金×2.11%，Y）
+       2205-01    貸2（凌群代扣-屋主，租金×2.11%，Y）
+
+   1號付屋主：
+   ・房客已在1號前先繳（錢已經在2205-01/131450-01）：
+       不扣健保：2205-01 借1（房客，全額，Y）／1110-01 貸2（屋主，全額，N）
+       要扣健保：2205-01 借1（房客，全額，Y）／1110-01 貸2（屋主，全額－租金×2.11%，N）／2205-01 貸2（凌群代扣-屋主，租金×2.11%，Y）
+   ・房客到1號還沒繳，公司墊付：
+       不扣健保：131450-01 借1（屋主，純租金，Y）／1110-01 貸2（屋主，純租金，N）
+       要扣健保：⚠ 目前無實際案例可依循，不自動產生分錄，列入需人工處理
+
+   房客在1號「之後」才繳（用來沖銷公司墊款）：⚠ 分錄尚未確認，不自動產生，列入需人工處理
+══════════════════════════════════════ */
+const SHE_INSURANCE_RATE=0.0211;
+const SHE_INSURANCE_THRESHOLD=20000;
+
+function sheBuildVoucherRows(targetYm){
+  const rows=[];
+  const warnings=[];
+  const [ty,tm]=targetYm.split("-").map(Number);
+  const firstOfMonthKey=ty*10000+tm*100+1;
+  const rocYear=ty-1911;
+  const firstDateStr=`${rocYear}/${pad2(tm)}/01`;
+  const rocYm=sheRocYM(targetYm);
+
+  // 依屋主匯款順序排列；清單裡沒有的物件排在最後，並個別提醒
+  const withOrder=[];
+  const withoutOrder=[];
+  SHEZHAI_TENANTS.forEach(t=>{
+    const o=SHE_LANDLORD_BY_TENANT[t.id];
+    if(o) withOrder.push({tenant:t, landlord:o.landlord, order:o.order});
+    else withoutOrder.push({tenant:t, landlord:null, order:99999});
+  });
+  withOrder.sort((a,b)=>a.order-b.order);
+  const queue=[...withOrder, ...withoutOrder];
+
+  queue.forEach(({tenant,landlord})=>{
+    if(tenant.rent==null) return; // 沒有租金資料的房客這裡先跳過
+    if(!landlord){
+      warnings.push(`「${tenant.name}」（${tenant.addr}）在屋主匯款順序清單裡找不到對應的屋主資訊，這筆需要人工補上屋主姓名與付款順序`);
+      return;
+    }
+
+    const addrLabel=tenant.addr;
+    const needsInsurance=tenant.rent>=SHE_INSURANCE_THRESHOLD;
+    const matchedItem=sheState.allMatched.find(m=>m.due.tenantId===tenant.id && m.due.ym===targetYm);
+
+    if(matchedItem){
+      const paidDateKey=matchedItem.bank.dateKey;
+      const receivedAmt=matchedItem.bank.amount;
+      const tenantName=tenant.name;
+
+      if(paidDateKey>firstOfMonthKey){
+        warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），這種「沖銷公司墊款」的分錄尚未確認過，請人工處理`);
+        return;
+      }
+
+      const recvDateStr=rocStr(paidDateKey);
+
+      // ① 收房客租金
+      if(!needsInsurance){
+        rows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+        rows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+      }else{
+        const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+        rows.push([rocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+        rows.push([rocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
+        rows.push([rocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+      }
+
+      // ② 1號付屋主（房客已先繳）
+      if(!needsInsurance){
+        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+        rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+      }else{
+        const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+        rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+        rows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群代扣(${addrLabel}-${rocYm}租金-${landlord})`,"","Y"]);
+      }
+    }else{
+      // 房客到1號還沒繳，公司墊付
+      if(needsInsurance){
+        warnings.push(`「${tenant.name}」（${addrLabel}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但截至 ${rocYm} 這期還沒收到房客租金——「要扣健保＋公司墊付」這種組合目前沒有實際案例可依循分錄，請人工處理`);
+        return;
+      }
+      rows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","Y"]);
+      rows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-${landlord}`,"","N"]);
+    }
+  });
+
+  return{rows, warnings};
+}
+
+document.getElementById("she-btn-voucher").addEventListener("click",()=>{
+  const ym=sheState.selectedYm;
+  if(!ym){
+    showErr("she-err","請先在上面的月份選單選一個特定月份（不能是「全部月份」），傳票是照月份產生的");
+    return;
+  }
+  if(!sheState.allMatched.length && !sheState.allUnmatched.length){
+    showErr("she-err","請先完成網銀比對");
+    return;
+  }
+
+  const{rows,warnings}=sheBuildVoucherRows(ym);
+
+  if(!rows.length){
+    showErr("she-err",`${ym} 沒有可以產生傳票的資料`);
+    return;
+  }
+
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
+  const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...rows]);
+  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+  XLSX.writeFile(wb, `傳票匯入_社宅_${ym}_`+new Date().toISOString().slice(0,10)+".xlsx");
+
+  const warnEl=document.getElementById("she-voucher-warn");
+  if(warnings.length){
+    warnEl.style.display="block";
+    warnEl.innerHTML=`⚠ 傳票已下載，但有 <strong>${warnings.length}</strong> 筆需要人工處理，沒有包含在下載的傳票裡：<br><br>`+
+      warnings.map(w=>`・${w}`).join("<br>");
+  }else{
+    warnEl.style.display="none";
   }
 });
 </script>

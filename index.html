@@ -612,7 +612,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       <div>
         <div class="dropzone" id="biz-dz-ragic" data-target="biz-ragic">
           <div class="dz-icon">📑</div>
-          <div class="dz-label">上傳 RAGIC 收款單</div>
+          <div class="dz-label">上傳 RAGIC收款單(列表頁上的欄位)</div>
           <div class="dz-hint">收款單.xlsx</div>
         </div>
         <input type="file" id="biz-file-ragic" accept=".xlsx" hidden>
@@ -684,7 +684,6 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="bal" id="biz-bal">—</div>
         <div class="btns">
           <button class="btn secondary" id="biz-btn-reset">重新上傳</button>
-          <button class="btn primary" id="biz-btn-voucher" disabled>下載傳票匯入檔</button>
           <button class="btn primary" id="biz-btn-cashflow" disabled>下載金流表</button>
         </div>
       </div>
@@ -2621,40 +2620,12 @@ function renderBizResult(){
 
 function updateBizButtons(){
   if(!bizState.matched)return;
-  const hasPending=bizState.matched.some(item=>ACCOUNTS[item.source.acctKey].lines.length===0);
-  const ready=bizState.matched.length>0&&!hasPending;
-  document.getElementById("biz-btn-voucher").disabled=!ready;
   document.getElementById("biz-btn-cashflow").disabled=bizState.matched.length===0;
 }
 
 /* ══════════════════════════════════════
    業務處 產出
 ══════════════════════════════════════ */
-document.getElementById("biz-btn-voucher").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const rows=[HEADERS];
-  bizState.matched.forEach(item=>{
-    const s=item.source;
-    const acct=ACCOUNTS[s.acctKey];
-    if(!acct.lines.length)return;
-    const summary=acct.buildSummary({address:s.address,fullAddr:s.fullAddr,tenantOrOwner:s.tenantOrOwner});
-    const rocYear=toRoc(s.dateKey).year;
-    acct.lines.forEach(line=>{
-      rows.push([
-        rocYear,"DEFAULT",3,s.rocStr,
-        line.code,"",
-        line.dc,computeAmt(line.amountType,s.amount),
-        summary,
-      ]);
-    });
-  });
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-  XLSX.writeFile(wb,"傳票匯入_業務處_"+new Date().toISOString().slice(0,10)+".xlsx");
-});
-
 document.getElementById("biz-btn-cashflow").addEventListener("click",()=>{
   const wb=XLSX.utils.book_new();
 
@@ -4022,9 +3993,19 @@ function reconcileBizInvoice(cashflowRows, invoices){
 
   const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
 
+  // 地址正規化：去除括號（全形/半形）與所有空白，避免「2樓(202室)」跟「2樓 202室」這種純格式差異比對不到
+  function bizNormalizeAddr(s){
+    if(!s) return "";
+    return String(s).trim()
+      .replace(/[（(]/g,"")
+      .replace(/[）)]/g,"")
+      .replace(/\s+/g,"");
+  }
   function addrMatch(cfAddr, invAddr){
     if(!cfAddr||!invAddr) return false;
-    return cfAddr===invAddr||cfAddr.startsWith(invAddr)||invAddr.startsWith(cfAddr);
+    const a=bizNormalizeAddr(cfAddr), b=bizNormalizeAddr(invAddr);
+    if(!a||!b) return false;
+    return a===b||a.startsWith(b)||b.startsWith(a);
   }
 
   for(const cfRow of serviceRows){
@@ -4036,9 +4017,17 @@ function reconcileBizInvoice(cashflowRows, invoices){
       .map(chunk=>chunk.split("-")[0].trim())
       .filter(Boolean);
 
-    const candidates=invoices.filter(inv=>
+    let candidates=invoices.filter(inv=>
       !usedInvoiceNos.has(inv.invoiceNo)
       && addrLines.some(addr=>addrMatch(addr, inv.caseAddr)));
+
+    // 地址完全找不到候選——有些入帳說明寫的是案件代號（例如「中山2245(代租管)」）不是真實地址，
+    // 這時候退回用「買受人姓名有沒有出現在金流表說明裡」找候選，一樣要求金額對得上才算數。
+    if(candidates.length===0){
+      candidates=invoices.filter(inv=>
+        !usedInvoiceNos.has(inv.invoiceNo)
+        && inv.buyerName && cfRow.desc.includes(inv.buyerName));
+    }
 
     if(candidates.length===0){
       unmatched.push(cfRow);

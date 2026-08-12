@@ -3951,6 +3951,7 @@ function findInvoiceSubsetsWithSum(items, target){
 // 組出比對成功後金流表說明欄的標準格式：
 // 「案件地址-買受人名稱-服務費-發票號碼」，多張發票用「+」串接；
 // 如果這筆入帳合併了不只一個地址，各地址分段落列出。
+// 發票號碼在金流表裡要去掉中間的「-」（例如 BR-46394403 要變成 BR46394403）。
 function bizBuildMatchedDesc(invs){
   const groups=new Map();
   invs.forEach(inv=>{
@@ -3959,7 +3960,7 @@ function bizBuildMatchedDesc(invs){
     groups.get(key).push(inv);
   });
   return[...groups.entries()].map(([addr,list])=>{
-    const parts=list.map(inv=>`${inv.buyerName||"—"}-服務費-${inv.invoiceNo}`).join("+");
+    const parts=list.map(inv=>`${inv.buyerName||"—"}-服務費-${String(inv.invoiceNo||"").replace(/-/g,"")}`).join("+");
     return `${addr}-${parts}`;
   }).join("\n");
 }
@@ -4245,6 +4246,18 @@ document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
 
 // 下載傳票匯入檔
 document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
+  // 下載傳票前先提醒：如果還有未比對到發票／金額組合重複待確認的項目，
+  // 這些不會出現在傳票裡，建議先補齊發票資料重新比對，確保下載的傳票是完整、正確的。
+  const pendingCount=bizInvState.unmatched.length+bizInvState.ambiguous.length;
+  if(pendingCount>0){
+    const proceed=confirm(
+      `⚠ 目前還有 ${bizInvState.unmatched.length} 筆未比對到發票、${bizInvState.ambiguous.length} 筆金額組合重複待確認，這些不會出現在傳票裡。\n\n`+
+      `建議：先確認這些是不是還缺發票資料，補齊後重新上傳發票、重新比對，再下載傳票，這樣才會是最完整正確的版本。\n\n`+
+      `要先不管這些、直接下載目前已比對成功的部分嗎？`
+    );
+    if(!proceed) return;
+  }
+
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   const rows=[HEADERS];
 

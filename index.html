@@ -309,6 +309,20 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
+  <!-- 立帳檔產生 -->
+  <div class="card" id="fang-lizhang-card" style="margin-top:14px;display:none;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      傳票匯入文中系統後，系統會回傳真正的傳票號碼，請在下面每個日期各自填入對應的傳票號碼，再產生立帳檔。
+      立帳檔只會抓傳票裡科目代號為 2205-01／2205-02／2205-03／2205-04 的那些列。
+    </div>
+    <div id="fang-lizhang-inputs"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+      <button class="btn primary" id="fang-btn-lizhang">產生立帳檔</button>
+    </div>
+    <div class="errbox" id="fang-lizhang-err"></div>
+  </div>
+
   <!-- 比對結果 -->
   <div id="fang-result" hidden>
 
@@ -2221,7 +2235,10 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
     dateGroups.get(dateStr).push({...row,dateStr});
   });
 
-  // 每個日期產出一個Excel
+  // 每個日期產出一個Excel，同時保留這份資料供之後產生立帳檔使用
+  // （立帳檔的「傳票序號」要對應到「這一列在原始傳票檔裡是第幾列」，
+  //   所以要在這裡、也就是傳票實際產出的當下，把每列的序號一起記下來）
+  fangVoucherBatches.clear();
   dateGroups.forEach((dateRows,dateStr)=>{
     const rows=[HEADERS];
     dateRows.forEach(row=>{
@@ -2243,8 +2260,102 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
     // 檔名：收入_傳票匯入_115-07-08.xlsx
     const fileDate=dateStr.replace(/\//g,"-");
     XLSX.writeFile(wb,`收入_傳票匯入_${fileDate}.xlsx`);
+
+    // 存下這個日期的傳票明細列（不含表頭），index+1 就是「序號」（第1列=0001）
+    fangVoucherBatches.set(dateStr, rows.slice(1));
   });
+
+  renderLizhangInputs();
 });
+
+// ══════════════════════════════════════
+// 立帳檔：傳票匯入文中後，把文中回傳的真正傳票號碼填回來，
+// 產生「立帳檔」給會計匯入文中做立帳/沖帳。
+// 只挑傳票裡科目代號為 2205-01～04 的列；
+// 傳票序號＝這一列在原始傳票檔裡的第幾列（從0001開始）；
+// 立帳單號＝產生立帳檔當天的民國日期(無斜線) + 當天第幾份立帳檔(0001起，同一天做好幾份日期各自的立帳檔會連續編號)。
+// ══════════════════════════════════════
+let fangVoucherBatches=new Map(); // dateStr -> 傳票列陣列(不含表頭)
+let fangLizhangSeqToday=0; // 立帳單號的當天流水號，重新整理頁面會歸零
+
+function renderLizhangInputs(){
+  const card=document.getElementById("fang-lizhang-card");
+  const wrap=document.getElementById("fang-lizhang-inputs");
+  if(!fangVoucherBatches.size){ card.style.display="none"; return; }
+  card.style.display="block";
+  wrap.innerHTML="";
+  [...fangVoucherBatches.keys()].sort().forEach(dateStr=>{
+    const rowCount=fangVoucherBatches.get(dateStr).length;
+    const lizhangCount=fangVoucherBatches.get(dateStr).filter(r=>["2205-01","2205-02","2205-03","2205-04"].includes(r[4])).length;
+    const div=document.createElement("div");
+    div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
+    div.innerHTML=`
+      <span style="min-width:110px;font-size:13px;">${dateStr}</span>
+      <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
+      <input type="text" class="fang-lizhang-vnum" data-date="${dateStr}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById("fang-btn-lizhang").addEventListener("click",()=>{
+  clearErr("fang-lizhang-err");
+  const inputs=[...document.querySelectorAll(".fang-lizhang-vnum")];
+  const vnumByDate={};
+  inputs.forEach(inp=>{
+    const v=inp.value.trim();
+    if(v) vnumByDate[inp.dataset.date]=v;
+  });
+  if(!Object.keys(vnumByDate).length){
+    showErr("fang-lizhang-err","請至少填一個日期對應的真正傳票號碼");
+    return;
+  }
+
+  const LIZHANG_CODES=["2205-01","2205-02","2205-03","2205-04"];
+  const todayRocForLizhang=TODAY_ROC.replace(/\//g,""); // 立帳單號用的「今天」民國日期(無斜線)，例如 115/08/12 → "1150812"
+  let anyOutput=false;
+
+  Object.keys(vnumByDate).sort().forEach(dateStr=>{
+    const voucherRows=fangVoucherBatches.get(dateStr);
+    if(!voucherRows) return;
+    const realVoucherNo=vnumByDate[dateStr];
+
+    const outRows=[];
+    voucherRows.forEach((r,idx)=>{
+      const acctCode=r[4];
+      if(!LIZHANG_CODES.includes(acctCode)) return;
+      fangLizhangSeqToday++;
+      const lizhangNo=todayRocForLizhang+String(fangLizhangSeqToday).padStart(4,"0");
+      const seqNo=String(idx+1).padStart(4,"0"); // 這一列在原始傳票檔裡的第幾列
+      outRows.push([
+        lizhangNo,        // 立帳單號
+        acctCode,          // 科目代號
+        r[3],              // 立帳日期＝原始傳票該列的日期
+        r[5],              // 客戶供應商代號
+        realVoucherNo,     // 立帳傳票號碼＝文中回傳的真正傳票號碼
+        seqNo,              // 傳票序號
+        r[7],              // 立帳金額
+        r[8],              // 備註(30C)＝原始傳票該列的長摘要
+        r[9]||"",          // 部門\ 工地編號
+      ]);
+    });
+
+    if(!outRows.length) return;
+    anyOutput=true;
+    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
+    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
+    const fileDate=dateStr.replace(/\//g,"-");
+    XLSX.writeFile(wb, `立帳檔_${fileDate}.xlsx`);
+  });
+
+  if(!anyOutput){
+    showErr("fang-lizhang-err","填的這些日期裡，沒有任何一列的科目代號是 2205-01～04，沒有東西可以產生立帳檔");
+  }
+});
+
 
 document.getElementById("fang-btn-cashflow").addEventListener("click",()=>{
   const acct=ACCOUNTS.fang;

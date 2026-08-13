@@ -724,7 +724,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     <!-- 比對結果 -->
     <div id="biz-inv-result" hidden style="margin-top:16px;">
       <div class="card">
-        <div class="match-summary" style="grid-template-columns:repeat(3,1fr);">
+        <div class="match-summary" style="grid-template-columns:repeat(4,1fr);">
           <div class="ms-cell ok">
             <div class="ms-num" id="biz-inv-cnt-matched">0</div>
             <div class="ms-lbl">✓ 比對成功</div>
@@ -736,6 +736,10 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <div class="ms-cell warn">
             <div class="ms-num" id="biz-inv-cnt-unmatched">0</div>
             <div class="ms-lbl">⚠ 未比對到</div>
+          </div>
+          <div class="ms-cell blue">
+            <div class="ms-num" id="biz-inv-cnt-other">0</div>
+            <div class="ms-lbl">🏠 租金等非服務費項目</div>
           </div>
         </div>
         <!-- 收合/展開 -->
@@ -756,6 +760,19 @@ button.btn.ghost:hover{background:var(--accent-soft);}
                 <th class="right">未稅</th><th class="right">稅額</th><th>狀態</th><th>操作</th>
               </tr></thead>
               <tbody id="biz-inv-tb"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="biz-inv-other-wrap" style="display:none;padding:0 18px 12px;">
+          <div style="font-size:12.5px;font-weight:600;color:#c0392b;margin:10px 0 6px;">
+            ⚠ 非服務費類項目（例如租金）——這些還是需要入帳，但沒有發票可比對，不會出現在傳票裡，請人工開立分錄
+          </div>
+          <div class="tbl-wrap">
+            <table>
+              <thead><tr>
+                <th>#</th><th>日期</th><th>金流表說明</th><th class="right">金額</th><th>狀態</th>
+              </tr></thead>
+              <tbody id="biz-inv-other-tb"></tbody>
             </table>
           </div>
         </div>
@@ -3902,9 +3919,12 @@ function parseBizCashflowXlsx(data){
       }catch(e){}
       if(!handled){
         // toRoc 對「7月22日」這種純文字日期不會拋例外，而是靜默產生 NaN，
-        // 所以要另外檢查解析結果有沒有效，無效才退回這個文字格式解析
+        // 所以要另外檢查解析結果有沒有效，無效才退回這個文字格式解析。
+        // 這裡也要容忍「6月25日 ★」這種後面多了星號或空白的寫法——
+        // 星號是第一部分「下載金流表」自己標記未核對項目用的，整理過的檔案常常會留著，
+        // 只取開頭的「N月N日」，不要求整段字串完全符合。
         const s=String(r[0]).trim();
-        const mMatch=s.match(/^(\d+)月(\d+)日$/);
+        const mMatch=s.match(/^(\d+)月(\d+)日/);
         if(mMatch){
           const yr=currentDate?parseInt(currentDate.split("/")[0]):115;
           currentDate=`${yr}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
@@ -3915,12 +3935,17 @@ function parseBizCashflowXlsx(data){
     const income=r[3]?Number(r[3]):null;
     if(!desc||!income||isNaN(income)||income<=0) continue;
     if(desc==="說明") continue;
-    if(!desc.includes("服務費")&&!desc.includes("定金")&&!desc.includes("斡旋")) continue;
+    // 不再把非服務費/定金/斡旋的項目（例如租金）直接濾掉不見，
+    // 改成保留、標記類型，讓畫面上看得到、金流表下載也不會少筆數；
+    // 只有服務費/定金/斡旋才會走發票比對跟自動產生傳票的流程。
+    let kind="other";
+    if(desc.includes("服務費")) kind="service";
+    else if(desc.includes("定金")||desc.includes("斡旋")) kind="deposit";
     // 抓發票號碼（兩個大寫英文字母開頭）
     const invNos=[];
     const invMatches=desc.matchAll(/([A-Z]{2}[\-\d]+)/g);
     for(const m of invMatches) invNos.push(m[1]);
-    rows.push({date:currentDate, desc, amount:income, invNos, raw:r, _cidx:rows.length});
+    rows.push({date:currentDate, desc, amount:income, invNos, raw:r, _cidx:rows.length, kind});
   }
   return rows;
 }
@@ -3952,10 +3977,16 @@ function findInvoiceSubsetsWithSum(items, target){
 // 「案件地址-買受人名稱-服務費-發票號碼」，多張發票用「+」串接；
 // 如果這筆入帳合併了不只一個地址，各地址分段落列出。
 // 發票號碼在金流表裡要去掉中間的「-」（例如 BR-46394403 要變成 BR46394403）。
+// 組出比對成功後金流表說明欄的標準格式：
+// 「案件地址-買受人名稱-服務費-發票號碼」，多張發票用「+」串接；
+// 如果這筆入帳合併了不只一個地址，各地址分段落列出。
+// 地址一律用「金流表原本寫的」那段文字（可能是真實地址，也可能是內部案件代號如「中山2245(代租管)」），
+// 不會被換成發票上查到的真實地址，維持金流表原本的呈現方式。
+// 發票號碼在金流表裡要去掉中間的「-」（例如 BR-46394403 要變成 BR46394403）。
 function bizBuildMatchedDesc(invs){
   const groups=new Map();
   invs.forEach(inv=>{
-    const key=inv.caseAddr||"";
+    const key=inv._origAddr||inv.caseAddr||"";
     if(!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(inv);
   });
@@ -3966,11 +3997,11 @@ function bizBuildMatchedDesc(invs){
 }
 
 // 傳票 1110-02（借方）那一列的長摘要用：跟 bizBuildMatchedDesc 一樣但不含發票號碼，
-// 格式「案件地址-買受人名稱-服務費」，多張發票用「+」串接。
+// 格式「案件地址-買受人名稱-服務費」，多張發票用「+」串接。地址一樣用金流表原文。
 function bizBuildDebitSummary(invs){
   const groups=new Map();
   invs.forEach(inv=>{
-    const key=inv.caseAddr||"";
+    const key=inv._origAddr||inv.caseAddr||"";
     if(!groups.has(key)) groups.set(key,[]);
     groups.get(key).push(inv);
   });
@@ -3984,15 +4015,22 @@ function reconcileBizInvoice(cashflowRows, invoices){
   const matched=[];
   const unmatched=[];
   const ambiguous=[];
+  const other=[]; // 非服務費/定金/斡旋的項目（例如租金）：不比對發票，但要讓人看得到、提醒人工處理
   const usedInvoiceNos=new Set();
 
   // 定金／斡旋：不需要比對發票，直接算比對成功（沿用原本「業務處金流表→傳票」的做法）
-  const depositRows=cashflowRows.filter(r=>r.desc.includes("定金")||r.desc.includes("斡旋"));
+  const depositRows=cashflowRows.filter(r=>r.kind==="deposit");
   depositRows.forEach(cfRow=>{
     matched.push({cfRow, type:"deposit"});
   });
 
-  const serviceRows=cashflowRows.filter(r=>r.desc.includes("服務費"));
+  // 非服務費/定金/斡旋的項目（例如租金）：金流表裡要看得到、但不自動產生傳票，提醒會計自己處理
+  const otherRows=cashflowRows.filter(r=>r.kind==="other");
+  otherRows.forEach(cfRow=>{
+    other.push(cfRow);
+  });
+
+  const serviceRows=cashflowRows.filter(r=>r.kind==="service");
 
   // 地址正規化：去除括號（全形/半形）與所有空白，避免「2樓(202室)」跟「2樓 202室」這種純格式差異比對不到
   function bizNormalizeAddr(s){
@@ -4018,9 +4056,24 @@ function reconcileBizInvoice(cashflowRows, invoices){
       .map(chunk=>chunk.split("-")[0].trim())
       .filter(Boolean);
 
+    // 先判斷這筆地址是不是社宅的物件——社宅案件走社宅自己的科目代號（不是服務費發票），
+    // 而且要特別註記，因為社宅的錢跑進業務處帳戶是特殊情況，要提醒會計注意。
+    const sheTenant=addrLines.length===1?sheResolveTenantByAddr(addrLines[0]):null;
+    if(sheTenant && sheTenant.rent!=null){
+      const needsInsurance=sheTenant.rent>=SHE_INSURANCE_THRESHOLD;
+      const landlordInfo=SHE_LANDLORD_BY_TENANT[sheTenant.id];
+      matched.push({
+        cfRow, type:"shezhai",
+        tenant:sheTenant, needsInsurance,
+        landlord:landlordInfo?landlordInfo.landlord:null,
+      });
+      continue;
+    }
+
     let candidates=invoices.filter(inv=>
       !usedInvoiceNos.has(inv.invoiceNo)
       && addrLines.some(addr=>addrMatch(addr, inv.caseAddr)));
+    let matchedAddr=candidates.length?addrLines.find(addr=>candidates.some(inv=>addrMatch(addr,inv.caseAddr))):null;
 
     // 地址完全找不到候選——有些入帳說明寫的是案件代號（例如「中山2245(代租管)」）不是真實地址，
     // 這時候退回用「買受人姓名有沒有出現在金流表說明裡」找候選，一樣要求金額對得上才算數。
@@ -4028,12 +4081,16 @@ function reconcileBizInvoice(cashflowRows, invoices){
       candidates=invoices.filter(inv=>
         !usedInvoiceNos.has(inv.invoiceNo)
         && inv.buyerName && cfRow.desc.includes(inv.buyerName));
+      matchedAddr=addrLines[0]||cfRow.desc.split("-")[0];
     }
 
     if(candidates.length===0){
       unmatched.push(cfRow);
       continue;
     }
+
+    // 記住這批候選對應到金流表原文的哪一段地址／代號，之後組摘要要用這個、不是發票上的地址
+    candidates=candidates.map(inv=>({...inv, _origAddr:matchedAddr}));
 
     const subsets=findInvoiceSubsetsWithSum(candidates, cfRow.amount);
 
@@ -4049,10 +4106,10 @@ function reconcileBizInvoice(cashflowRows, invoices){
       ambiguous.push({cfRow, subsets});
     }
   }
-  return{matched, unmatched, ambiguous};
+  return{matched, unmatched, ambiguous, other};
 }
 
-let bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[]};
+let bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[],other:[]};
 
 bindDropzone("biz-inv-dz-cashflow","biz-inv-file-cashflow",async(file,dz)=>{
   try{
@@ -4085,6 +4142,7 @@ document.getElementById("biz-inv-btn-match").addEventListener("click",()=>{
   bizInvState.matched=res.matched;
   bizInvState.unmatched=res.unmatched;
   bizInvState.ambiguous=res.ambiguous;
+  bizInvState.other=res.other;
   renderBizInvResult();
 });
 
@@ -4100,7 +4158,7 @@ function bizInvResolveAmbiguous(idx, subsetIdx){
 }
 
 document.getElementById("biz-inv-btn-reset").addEventListener("click",()=>{
-  bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[]};
+  bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[],other:[]};
   ["biz-inv-dz-cashflow","biz-inv-dz-invoice"].forEach(id=>{
     const dz=document.getElementById(id);
     dz.classList.remove("loaded");
@@ -4120,10 +4178,11 @@ function renderBizInvResult(){
   document.getElementById("biz-inv-tb-wrap").hidden=true;
   document.getElementById("biz-inv-toggle").textContent="▶";
 
-  const{matched,unmatched,ambiguous}=bizInvState;
+  const{matched,unmatched,ambiguous,other}=bizInvState;
   document.getElementById("biz-inv-cnt-matched").textContent=matched.length;
   document.getElementById("biz-inv-cnt-unmatched").textContent=unmatched.length;
   document.getElementById("biz-inv-cnt-ambiguous").textContent=ambiguous.length;
+  document.getElementById("biz-inv-cnt-other").textContent=other.length;
 
   const tb=document.getElementById("biz-inv-tb");
   tb.innerHTML="";
@@ -4143,10 +4202,30 @@ function renderBizInvResult(){
       tb.appendChild(tr);
       return;
     }
+    if(type==="shezhai"){
+      const{tenant,needsInsurance,landlord}=item;
+      const tr=document.createElement("tr");
+      tr.className="matched";
+      tr.innerHTML=`
+        <td>${i+1}</td>
+        <td style="max-width:220px;white-space:normal;">${cfRow.desc}</td>
+        <td class="mono right">${fmtMoney(cfRow.amount)}</td>
+        <td colspan="4" style="white-space:normal;color:var(--ink-soft);font-size:12.5px;">
+          🏘️ <strong>社宅案件（走社宅科目，不比對業務處發票）</strong><br>
+          房客：${tenant.name}｜租金：${fmtMoney(tenant.rent)}｜${needsInsurance?"需扣二代健保":"不需扣二代健保"}
+          ${needsInsurance&&!landlord?"<br><span style=\"color:#c0392b;\">⚠ 找不到屋主資訊，需人工確認</span>":""}
+        </td>
+        <td><span class="tag blue">🏘️ 社宅案件</span></td>
+        <td>—</td>
+      `;
+      tb.appendChild(tr);
+      return;
+    }
     const invNosStr=invs.map(inv=>inv.invoiceNo).join("、");
     const buyersStr=invs.map(inv=>inv.buyerName||"（無名稱／屋主？）").join("、");
     const totalUntax=invs.reduce((s,inv)=>s+inv.untaxed,0);
     const totalTax=invs.reduce((s,inv)=>s+inv.tax,0);
+    const isManual=invs.some(inv=>inv._manual);
     const tr=document.createElement("tr");
     tr.className="matched";
     tr.innerHTML=`
@@ -4157,7 +4236,7 @@ function renderBizInvResult(){
       <td>${buyersStr}</td>
       <td class="mono right">${fmtMoney(Math.round(totalUntax))}</td>
       <td class="mono right">${fmtMoney(Math.round(totalTax))}</td>
-      <td><span class="tag ok">✓ 比對成功</span></td>
+      <td><span class="tag ok">${isManual?"✓ 人工輸入":"✓ 比對成功"}</span></td>
       <td>—</td>
     `;
     tb.appendChild(tr);
@@ -4184,14 +4263,21 @@ function renderBizInvResult(){
     tb.appendChild(tr);
   });
   unmatched.forEach((cfRow,i)=>{
+    const idx=i;
     const tr=document.createElement("tr");
     tr.className="unmatched";
     tr.innerHTML=`
       <td>${matched.length+ambiguous.length+i+1}</td>
       <td style="max-width:220px;white-space:normal;">${cfRow.desc}</td>
       <td class="mono right">${fmtMoney(cfRow.amount)}</td>
-      <td colspan="3" style="color:var(--ink-faint);">—</td>
-      <td></td>
+      <td colspan="4" style="white-space:normal;min-width:280px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+          <input type="text" class="biz-inv-manual-no" data-idx="${idx}" placeholder="發票號碼" style="width:120px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;">
+          <input type="text" class="biz-inv-manual-buyer" data-idx="${idx}" placeholder="買受人" style="width:90px;padding:4px 6px;border:1px solid var(--border);border-radius:5px;font-size:12px;">
+          <button class="btn secondary biz-inv-manual-btn" data-idx="${idx}" style="padding:4px 10px;font-size:11px;">✓ 輸入完成</button>
+          <span style="font-size:11px;color:var(--ink-faint);">未稅/稅額會依營業稅5%自動算</span>
+        </div>
+      </td>
       <td><span class="tag warn">未比對到發票</span></td>
       <td>—</td>
     `;
@@ -4202,16 +4288,72 @@ function renderBizInvResult(){
       bizInvResolveAmbiguous(Number(btn.dataset.idx), Number(btn.dataset.subset));
     });
   });
+  tb.querySelectorAll(".biz-inv-manual-btn").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const idx=Number(btn.dataset.idx);
+      const noInput=tb.querySelector(`.biz-inv-manual-no[data-idx="${idx}"]`);
+      const buyerInput=tb.querySelector(`.biz-inv-manual-buyer[data-idx="${idx}"]`);
+      bizInvManualEntry(idx, noInput.value.trim(), buyerInput.value.trim());
+    });
+  });
+
+  // 非服務費/定金/斡旋的項目（例如租金）：不比對發票，但要清楚提醒會計人工處理
+  const otherWrap=document.getElementById("biz-inv-other-wrap");
+  const otherTb=document.getElementById("biz-inv-other-tb");
+  if(other.length){
+    otherWrap.style.display="block";
+    otherTb.innerHTML="";
+    other.forEach((cfRow,i)=>{
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td>${i+1}</td>
+        <td class="mono">${cfRow.date}</td>
+        <td style="max-width:280px;white-space:normal;">${cfRow.desc}</td>
+        <td class="mono right">${fmtMoney(cfRow.amount)}</td>
+        <td><span class="tag warn">⚠ 非服務費項目，需人工開立分錄</span></td>
+      `;
+      otherTb.appendChild(tr);
+    });
+  }else{
+    otherWrap.style.display="none";
+  }
 
   const totalAmt=matched.reduce((s,m)=>s+m.cfRow.amount,0);
   const totalUntax=matched.reduce((s,m)=>s+(m.invs?m.invs.reduce((a,inv)=>a+inv.untaxed,0):0),0);
   const totalTax=matched.reduce((s,m)=>s+(m.invs?m.invs.reduce((a,inv)=>a+inv.tax,0):0),0);
   const depositCount=matched.filter(m=>m.type==="deposit").length;
-  const summaryText=`比對成功 ${matched.length} 筆（含定金/斡旋 ${depositCount} 筆）｜金額 ${fmtMoney(totalAmt)}｜未稅 ${fmtMoney(Math.round(totalUntax))}｜稅額 ${fmtMoney(Math.round(totalTax))}`;
+  const sheCount=matched.filter(m=>m.type==="shezhai").length;
+  const summaryText=`比對成功 ${matched.length} 筆（含定金/斡旋 ${depositCount} 筆、社宅案件 ${sheCount} 筆）｜金額 ${fmtMoney(totalAmt)}｜未稅 ${fmtMoney(Math.round(totalUntax))}｜稅額 ${fmtMoney(Math.round(totalTax))}`;
   document.getElementById("biz-inv-bal").textContent=summaryText;
   document.getElementById("biz-inv-summary-line").textContent=summaryText;
-  document.getElementById("biz-inv-btn-cashflow").disabled=matched.length===0;
+  document.getElementById("biz-inv-btn-cashflow").disabled=(matched.length===0&&other.length===0);
   document.getElementById("biz-inv-btn-voucher").disabled=matched.length===0;
+}
+
+// 未比對到發票的項目，人工填發票號碼＋買受人，系統依營業稅5%自動算未稅/稅額
+// （未稅＝含稅金額÷1.05四捨五入，稅額＝含稅－未稅，跟真實發票資料驗證過公式一致）
+function bizInvManualEntry(idx, invoiceNo, buyerName){
+  clearErr("biz-inv-err");
+  if(!invoiceNo){
+    showErr("biz-inv-err","請至少填發票號碼");
+    return;
+  }
+  const cfRow=bizInvState.unmatched[idx];
+  if(!cfRow) return;
+  const total=cfRow.amount;
+  const untaxed=Math.round(total/1.05);
+  const tax=total-untaxed;
+  const addrLine=cfRow.desc.split("-")[0].trim();
+  const manualInv={
+    invoiceNo, caseAddr:addrLine, _origAddr:addrLine,
+    buyerName:buyerName||"", untaxed, tax, total,
+    rocDateStr:cfRow.date, rocYear:cfRow.date?parseInt(cfRow.date.split("/")[0]):115,
+    _manual:true,
+  };
+  const newDesc=bizBuildMatchedDesc([manualInv]);
+  bizInvState.matched.push({cfRow:{...cfRow,desc:newDesc}, invs:[manualInv], type:"service"});
+  bizInvState.unmatched.splice(idx,1);
+  renderBizInvResult();
 }
 
 // 下載金流表（標示發票號碼版）
@@ -4246,13 +4388,18 @@ document.getElementById("biz-inv-btn-cashflow").addEventListener("click",()=>{
 
 // 下載傳票匯入檔
 document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
-  // 下載傳票前先提醒：如果還有未比對到發票／金額組合重複待確認的項目，
-  // 這些不會出現在傳票裡，建議先補齊發票資料重新比對，確保下載的傳票是完整、正確的。
+  // 下載傳票前先提醒：如果還有未比對到發票／金額組合重複待確認／非服務費項目，
+  // 這些不會出現在傳票裡，建議先補齊資料重新比對，確保下載的傳票是完整、正確的。
   const pendingCount=bizInvState.unmatched.length+bizInvState.ambiguous.length;
-  if(pendingCount>0){
+  const otherCount=bizInvState.other.length;
+  if(pendingCount>0||otherCount>0){
+    const parts=[];
+    if(bizInvState.unmatched.length) parts.push(`${bizInvState.unmatched.length} 筆未比對到發票`);
+    if(bizInvState.ambiguous.length) parts.push(`${bizInvState.ambiguous.length} 筆金額組合重複待確認`);
+    if(otherCount) parts.push(`${otherCount} 筆非服務費項目（例如租金，需人工另外開立分錄）`);
     const proceed=confirm(
-      `⚠ 目前還有 ${bizInvState.unmatched.length} 筆未比對到發票、${bizInvState.ambiguous.length} 筆金額組合重複待確認，這些不會出現在傳票裡。\n\n`+
-      `建議：先確認這些是不是還缺發票資料，補齊後重新上傳發票、重新比對，再下載傳票，這樣才會是最完整正確的版本。\n\n`+
+      `⚠ 目前還有 ${parts.join("、")}，這些不會出現在傳票裡。\n\n`+
+      `建議：先確認未比對到的是不是還缺發票資料，補齊後重新上傳發票、重新比對；非服務費項目（租金）請直接人工開立分錄，再下載傳票，這樣才會是最完整正確的版本。\n\n`+
       `要先不管這些、直接下載目前已比對成功的部分嗎？`
     );
     if(!proceed) return;
@@ -4261,7 +4408,10 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   const rows=[HEADERS];
 
-  bizInvState.matched.forEach(item=>{
+  // 傳票列的順序要跟金流表（原始上傳順序）一致，用解析時記下的 _cidx 排序
+  const sortedMatched=bizInvState.matched.slice().sort((a,b)=>(a.cfRow._cidx??0)-(b.cfRow._cidx??0));
+
+  sortedMatched.forEach(item=>{
     const{cfRow,invs,type}=item;
 
     if(type==="deposit"){
@@ -4273,7 +4423,28 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
       return;
     }
 
-    const addr=invs[0].caseAddr||cfRow.desc.split("-")[0];
+    if(type==="shezhai"){
+      // 社宅案件跑進業務處帳戶：走社宅自己的科目代號（不是業務處的服務費科目），
+      // 邏輯跟社宅分頁「收房客租金」一致：租金<20,000 直接兩筆；≥20,000 要扣二代健保多一筆代扣。
+      // 摘要前面加註記，讓會計清楚知道這是社宅案件、不是業務處正常服務費收入。
+      const{tenant,needsInsurance,landlord}=item;
+      const rocYear=cfRow.date?(parseInt(cfRow.date.split("/")[0])||115):115;
+      const dateStr=cfRow.date||TODAY_ROC;
+      const note="【社宅案件】";
+      if(!needsInsurance){
+        rows.push([rocYear,"DEFAULT",3,dateStr,"1110-04","",1,cfRow.amount,`${note}${cfRow.desc}`,"","N"]);
+        rows.push([rocYear,"DEFAULT",3,dateStr,"2205-01","",2,cfRow.amount,`${note}${cfRow.desc}`,"","Y"]);
+      }else if(landlord){
+        const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+        rows.push([rocYear,"DEFAULT",3,dateStr,"1110-04","",1,cfRow.amount,`${note}${cfRow.desc}`,"","N"]);
+        rows.push([rocYear,"DEFAULT",3,dateStr,"131450-01","",2,cfRow.amount-insurance,`${note}${cfRow.desc}-屋主${landlord}`,"","Y"]);
+        rows.push([rocYear,"DEFAULT",3,dateStr,"2205-01","",2,insurance,`${note}凌群-代扣(${cfRow.desc}-屋主${landlord})`,"","Y"]);
+      }
+      // needsInsurance 但找不到屋主的情況，畫面上已經標警告、這裡不產生分錄，避免科目/金額算錯
+      return;
+    }
+
+    const addr=invs[0]._origAddr||invs[0].caseAddr||cfRow.desc.split("-")[0];
     // 年度也用金流表上的日期推算，跟傳票日期保持一致（不用發票的年度）
     const rocYear=cfRow.date?(parseInt(cfRow.date.split("/")[0])||115):(invs[0].rocYear||115);
 
@@ -4292,7 +4463,7 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     invs.forEach(inv=>{
       const buyerName=inv.buyerName||"";
       const s1=`${addr}-${buyerName}-服務費`;
-      const s2=`${addr}-${buyerName}-服務費-${inv.invoiceNo}`;
+      const s2=`${addr}-${buyerName}-服務費-${String(inv.invoiceNo||"").replace(/-/g,"")}`;
       rows.push([rocYear,"DEFAULT",3,dateStr,"4101-03","",2,
         Math.round(inv.untaxed),s1,"003",liChong("4101-03")]);
       rows.push([rocYear,"DEFAULT",3,dateStr,"2290","",2,

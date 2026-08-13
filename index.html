@@ -4471,11 +4471,22 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     });
   });
 
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-  XLSX.writeFile(wb,"傳票匯入_業務處電子發票_"+new Date().toISOString().slice(0,10)+".xlsx");
+  // 一個傳票只會有一個日期，所以依日期切開分別下載成獨立的傳票檔案
+  const groups=new Map();
+  rows.slice(1).forEach(r=>{
+    const d=r[3];
+    if(!groups.has(d)) groups.set(d,[]);
+    groups.get(d).push(r);
+  });
+  const dates=[...groups.keys()].sort();
+  dates.forEach(date=>{
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...groups.get(date)]);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+    const dateSafe=String(date).replace(/\//g,"-");
+    XLSX.writeFile(wb,`傳票匯入_業務處電子發票_${dateSafe}.xlsx`);
+  });
 });
 function parseFangInvoiceXlsx(data){
   const wb=XLSX.read(data,{type:"array"});

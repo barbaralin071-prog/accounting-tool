@@ -503,6 +503,25 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           <button class="btn primary" id="fang-pay-btn-voucher" disabled>下載支出傳票匯入檔</button>
         </div>
       </div>
+
+      <!-- 支出立帳檔產生（131450-01，流程跟房管收入那邊一樣）-->
+      <div class="card" id="fang-pay-lizhang-card" style="margin-top:14px;display:none;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔（支出）</div>
+        <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+          傳票匯入文中系統後，系統會回傳真正的傳票號碼，請在下面每個日期各自填入對應的傳票號碼，再產生立帳檔。
+          立帳檔只會抓傳票裡科目代號為 <strong>131450-01</strong> 的那些列（退押金、屋主租金代付款等）。
+          立帳單號的流水序號跟房管收入那邊共用同一份記錄，同一天不管是收入還是支出的立帳，序號都不會撞。
+        </div>
+        <div id="fang-pay-lizhang-inputs"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+          <span style="font-size:11.5px;color:var(--ink-faint);">序號會記住每個交易日期上次用到哪裡，同一個日期分好幾次處理也不會撞號</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn secondary" id="fang-pay-btn-lizhang-clear" title="清空所有交易日期記住的序號，重新從1001起算">清除序號記錄</button>
+            <button class="btn primary" id="fang-pay-btn-lizhang">產生立帳檔</button>
+          </div>
+        </div>
+        <div class="errbox" id="fang-pay-lizhang-err"></div>
+      </div>
     </div>
   </div>
 
@@ -2778,15 +2797,28 @@ function parseExpenseCashflowXlsx(data){
     aoa.slice(hi+1).forEach(r=>{
       // 更新日期（若有值則更新，空白沿用上一個）
       if(r[iDate]!=null&&r[iDate]!==""){
+        let handled=false;
         try{
           const roc=toRoc(r[iDate]);
-          if(roc&&roc.year&&roc.month&&roc.day){
+          if(roc&&!isNaN(roc.year)&&!isNaN(roc.month)&&!isNaN(roc.day)){
             currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+            handled=true;
           }
-        }catch(e){
-          // 嘗試民國日期文字格式（例如「115/07/08」）
+        }catch(e){}
+        if(!handled){
+          // toRoc 對文字型日期（例如「7月20日」）不一定會拋例外，可能靜默產生 NaN，
+          // 所以要另外檢查解析結果有沒有效，無效才退回文字格式解析，
+          // 不能只靠 try/catch 的 catch 區塊來接手。
           const s=String(r[iDate]).trim();
-          if(/^\d{3}\/\d{2}\/\d{2}$/.test(s)) currentDate=s;
+          if(/^\d{3}\/\d{1,2}\/\d{1,2}$/.test(s)){
+            currentDate=s;
+          }else{
+            const mMatch=s.match(/^(\d+)月(\d+)日/);
+            if(mMatch){
+              const yr=currentDate?parseInt(currentDate.split("/")[0]):115;
+              currentDate=`${yr}/${pad2(parseInt(mMatch[1]))}/${pad2(parseInt(mMatch[2]))}`;
+            }
+          }
         }
       }
 
@@ -2836,9 +2868,14 @@ function buildExpenseVoucherLines(row){
   const code=houseMatch?houseMatch.code:"";
 
   if(desc.includes("退押金")){
-    // 退押金：131450-01 借1 / 1110-01 貸2
+    // 退押金：131450-01 借1（押金金額）／1110-01 貸2（押金金額）
+    // 如果這筆有匯費，要多一列 6270 借1（匯費金額），貸方 1110-01 金額要含匯費一起；
+    // 匯費那列的客戶供應商代號跟摘要都要跟其他兩列一樣，不是空白代號、也不是「匯款手續費」這種固定字樣。
     lines.push({acctCode:"131450-01",custCode:code,dc:1,amount:amt,summary:desc});
-    lines.push({acctCode:"1110-01",custCode:code,dc:2,amount:amt,summary:desc});
+    if(fee>0){
+      lines.push({acctCode:"6270",custCode:code,dc:1,amount:fee,summary:desc});
+    }
+    lines.push({acctCode:"1110-01",custCode:code,dc:2,amount:amt+fee,summary:desc});
 
   }else{
     const hasAmt=desc.includes("$");
@@ -3001,6 +3038,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     ...SHEET_ORDER.filter(s=>sheetGroups.has(s)),
     ...[...sheetGroups.keys()].filter(s=>!SHEET_ORDER.includes(s))
   ];
+  const allRowsFlat=[]; // 收集全部工作頁產出的傳票列(不含表頭)，供立帳檔依日期分組使用
 
   sheetsToProcess.forEach(sheetName=>{
     const sheetRows=sheetGroups.get(sheetName);
@@ -3086,9 +3124,19 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     const ws=XLSX.utils.aoa_to_sheet(rows);
     ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10}];
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
+    allRowsFlat.push(...rows.slice(1)); // 去掉表頭，收集這個工作頁產出的傳票列
   });
 
   XLSX.writeFile(wb,"傳票匯入_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
+
+  // 依日期分組，存起來供「產生立帳檔（支出）」使用
+  fangPayVoucherBatches.clear();
+  allRowsFlat.forEach(r=>{
+    const d=r[3];
+    if(!fangPayVoucherBatches.has(d)) fangPayVoucherBatches.set(d,[]);
+    fangPayVoucherBatches.get(d).push(r);
+  });
+  renderPayLizhangInputs();
 
   // ── 按單號分類產出獨立 Excel ──
   const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
@@ -3097,6 +3145,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
   function classifyRow(row){
     const orderNo=row.orderNo||"";
     const desc=row.desc||"";
+    if(desc.includes("退押金")) return "退押金";
     if(orderNo.includes("代租請")) return "房管屋主出款";
     if(orderNo.includes("月請")){
       const isFullAddr=CITY_KEYS_V.some(k=>desc.startsWith(k));
@@ -3179,7 +3228,96 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
 
 });
 
-// 判斷是否同仁代墊（收款人名稱含部門前綴）
+// ══════════════════════════════════════
+// 支出立帳檔：只挑傳票裡科目代號為 131450-01 的列（退押金、屋主租金代付款等）。
+// 流程、欄位、立帳單號規則都跟房管收入那邊一樣，序號記錄也是共用同一份（fangLoadLizhangSeqMap／
+// fangSaveLizhangSeqMap），這樣同一天不管是收入還是支出的立帳，序號都不會撞到。
+// ══════════════════════════════════════
+let fangPayVoucherBatches=new Map(); // dateStr -> 傳票列陣列(不含表頭)
+
+function renderPayLizhangInputs(){
+  const card=document.getElementById("fang-pay-lizhang-card");
+  const wrap=document.getElementById("fang-pay-lizhang-inputs");
+  if(!fangPayVoucherBatches.size){ card.style.display="none"; return; }
+  card.style.display="block";
+  wrap.innerHTML="";
+  [...fangPayVoucherBatches.keys()].sort().forEach(dateStr=>{
+    const rowCount=fangPayVoucherBatches.get(dateStr).length;
+    const lizhangCount=fangPayVoucherBatches.get(dateStr).filter(r=>r[4]==="131450-01").length;
+    const div=document.createElement("div");
+    div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
+    div.innerHTML=`
+      <span style="min-width:110px;font-size:13px;">${dateStr}</span>
+      <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
+      <input type="text" class="fang-pay-lizhang-vnum" data-date="${dateStr}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById("fang-pay-btn-lizhang").addEventListener("click",()=>{
+  clearErr("fang-pay-lizhang-err");
+  const inputs=[...document.querySelectorAll(".fang-pay-lizhang-vnum")];
+  const vnumByDate={};
+  inputs.forEach(inp=>{
+    const v=inp.value.trim();
+    if(v) vnumByDate[inp.dataset.date]=v;
+  });
+  if(!Object.keys(vnumByDate).length){
+    showErr("fang-pay-lizhang-err","請至少填一個日期對應的真正傳票號碼");
+    return;
+  }
+
+  const LIZHANG_CODES_PAY=["131450-01"];
+  const seqMap=fangLoadLizhangSeqMap(); // 跟房管收入共用同一份序號記錄
+  let anyOutput=false;
+
+  Object.keys(vnumByDate).sort().forEach(dateStr=>{
+    const voucherRows=fangPayVoucherBatches.get(dateStr);
+    if(!voucherRows) return;
+    const realVoucherNo=vnumByDate[dateStr];
+
+    const outRows=[];
+    let seqInFile=seqMap[dateStr]||1000;
+    voucherRows.forEach((r,idx)=>{
+      const acctCode=r[4];
+      if(!LIZHANG_CODES_PAY.includes(acctCode)) return;
+      seqInFile++;
+      const lizhangDateRoc=String(r[3]).replace(/\//g,"");
+      const lizhangNo=lizhangDateRoc+String(seqInFile);
+      const seqNo=String(idx+1).padStart(4,"0");
+      outRows.push([
+        lizhangNo, acctCode, r[3], r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
+      ]);
+    });
+
+    if(!outRows.length) return;
+    seqMap[dateStr]=seqInFile;
+    anyOutput=true;
+    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
+    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
+    const fileDate=dateStr.replace(/\//g,"-");
+    XLSX.writeFile(wb, `立帳檔_支出_${fileDate}.xlsx`);
+  });
+
+  if(!anyOutput){
+    showErr("fang-pay-lizhang-err","填的這些日期裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
+  }else{
+    fangSaveLizhangSeqMap(seqMap);
+    clearErr("fang-pay-lizhang-err");
+  }
+});
+
+document.getElementById("fang-pay-btn-lizhang-clear").addEventListener("click",()=>{
+  fangSaveLizhangSeqMap({});
+  clearErr("fang-pay-lizhang-err");
+  showErr("fang-pay-lizhang-err","已清空所有交易日期記住的序號，下次產生立帳檔會從1001重新起算");
+});
+
+
 const DEPT_PREFIXES=["房管處","房務部","業務處","短租處","營運","行政","財務","資訊"];
 function isStaffAdvance(receiverName){
   if(!receiverName) return false;

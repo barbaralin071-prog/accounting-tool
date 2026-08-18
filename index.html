@@ -612,7 +612,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       <div>
         <div class="dropzone" id="biz-dz-ragic" data-target="biz-ragic">
           <div class="dz-icon">📑</div>
-          <div class="dz-label">上傳 RAGIC收款單(列表頁上的欄位)</div>
+          <div class="dz-label">上傳 RAGIC收款單(全部欄位/全部資料)</div>
           <div class="dz-hint">收款單.xlsx</div>
         </div>
         <input type="file" id="biz-file-ragic" accept=".xlsx" hidden>
@@ -1294,6 +1294,14 @@ function parseRagicXlsx(data){
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
 
+  // 「全部欄位」版的收款單，「地址」這個欄位名稱會出現不只一次（例如舊版單一地址欄＋新版縣市/行政區/地址
+  // 三欄式），如果只用欄位名稱抓，會抓到第一個出現的「地址」、不一定是跟「縣市」「行政區」配對的那個。
+  // 所以「地址」要明確抓「緊接在行政區欄位後面」出現的那一個，其餘同名的地址欄一律不用。
+  const cityIdx=col("縣市");
+  const distIdx=col("行政區");
+  let addrIdx=distIdx>=0?headers.indexOf("地址",distIdx+1):-1;
+  if(addrIdx<0) addrIdx=col("地址");
+
   // 解析款項細節說明 → 買受人字串
   function parseDetail(detail, acct){
     if(!detail) return acct.includes("現金")||acct.includes("保險箱")?"現金":"";
@@ -1357,10 +1365,15 @@ function parseRagicXlsx(data){
       const ymMinus2=calcYm(dateVal);
 
       // 地址
-      const city=String(r[col("縣市")]||"").trim();
-      const dist=String(r[col("行政區")]||"").trim();
-      const street=String(r[col("地址")]||"").trim();
-      const fullAddr=cleanAddr(city,dist,street);
+      const city=String(r[cityIdx]||"").trim();
+      const dist=String(r[distIdx]||"").trim();
+      const street=String(r[addrIdx]||"").trim();
+      let fullAddr=cleanAddr(city,dist,street);
+      // 縣市/行政區/地址三欄都是空的，改試試看另一個（第一個出現的）「地址」欄有沒有資料
+      if(!fullAddr){
+        const fallbackAddr=col("地址");
+        if(fallbackAddr>=0 && fallbackAddr!==addrIdx) fullAddr=String(r[fallbackAddr]||"").trim();
+      }
 
       // 說明欄
       let descSuffix=parseDetail(detail,acct);
@@ -2523,7 +2536,7 @@ document.getElementById("biz-btn-reset").addEventListener("click",()=>{
   ["biz-dz-bank","biz-dz-ragic"].forEach(id=>{
     const dz=document.getElementById(id);
     dz.classList.remove("loaded");
-    dz.querySelector(".dz-label").textContent=id.includes("bank")?"上傳網銀明細":"上傳 RAGIC 收款單";
+    dz.querySelector(".dz-label").textContent=id.includes("bank")?"上傳網銀明細":"上傳 RAGIC收款單(全部欄位/全部資料)";
   });
   document.getElementById("biz-file-bank").value="";
   document.getElementById("biz-file-ragic").value="";

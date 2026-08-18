@@ -1334,12 +1334,14 @@ function parseRagicXlsx(data){
   }
 
   // 地址清理（去掉重複縣市）
+  // 地址清理：如果「地址」欄本身就已經包含完整的縣市/行政區（不同收款單來源格式不一致，
+  // 有些地址欄只寫街道門牌，有些已經整段包含縣市行政區），直接用地址欄就好，不要重複補一次
   function cleanAddr(city,dist,street){
-    let addr=(city+dist+street).trim();
-    // 去掉重複的縣市前綴
-    if(addr.startsWith(city+city)) addr=addr.slice(city.length);
-    if(addr.startsWith(dist+dist)) addr=addr.slice(dist.length);
-    return addr;
+    city=(city||"").trim(); dist=(dist||"").trim(); street=(street||"").trim();
+    if(!street) return (city+dist).trim();
+    if(street.startsWith(city+dist)) return street;
+    if(city && street.startsWith(city)) return street;
+    return (city+dist+street).trim();
   }
 
   return aoa.slice(hi+1)
@@ -1355,10 +1357,10 @@ function parseRagicXlsx(data){
       const ymMinus2=calcYm(dateVal);
 
       // 地址
-      const city=String(r[45]||"").trim();
-      const dist=String(r[46]||"").trim();
-      const street=String(r[47]||"").trim();
-      const fullAddr=cleanAddr(city,dist,street)||r[col("地址")]||"";
+      const city=String(r[col("縣市")]||"").trim();
+      const dist=String(r[col("行政區")]||"").trim();
+      const street=String(r[col("地址")]||"").trim();
+      const fullAddr=cleanAddr(city,dist,street);
 
       // 說明欄
       let descSuffix=parseDetail(detail,acct);

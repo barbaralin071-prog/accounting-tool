@@ -1216,6 +1216,18 @@ function parseBankXlsx(data){
 /* ══════════════════════════════════════
    解析第三方帳務報表
 ══════════════════════════════════════ */
+// 解析「帳單區間」欄位，格式通常是「2026-08-01 ~ 2026-08-31」這種起訖日期
+// （分隔符號可能是 ~／～／- 等，日期格式可能用 - 或 /），取「起始日期」的年月當作這筆錢實際是哪個月的租金。
+function parseBillPeriod(val){
+  if(!val) return null;
+  const s=String(val).trim();
+  const m=s.match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  if(!m) return null;
+  const y=parseInt(m[1],10), mo=parseInt(m[2],10);
+  if(isNaN(y)||isNaN(mo)) return null;
+  return{rocYear:y-1911, rocMonth:mo};
+}
+
 function parseThirdXlsx(data){
   const wb=XLSX.read(data,{type:"array"});
   const sheetName=wb.SheetNames.includes("全部資料")?"全部資料":wb.SheetNames[wb.SheetNames.length-1];
@@ -1253,6 +1265,15 @@ function parseThirdXlsx(data){
       const billNote=r[col("帳單備註")]?String(r[col("帳單備註")]):"";
       const totalAmt=Number(r[col("入帳金額")]);
 
+      // 「這筆錢實際是哪個月份的租金」優先看「帳單區間」欄位（例如房客提早繳款，
+      // 入帳日期是7/30但帳單區間是2026-08-01~2026-08-31，就該算8月租金，不是7月）；
+      // 帳單區間欄位不存在或解析不出來，才退回用入帳日期的年月當作備援。
+      const billPeriodIdx=col("帳單區間");
+      const billPeriod=billPeriodIdx>=0?parseBillPeriod(r[billPeriodIdx]):null;
+      const rentRocYear=billPeriod?billPeriod.rocYear:roc.year;
+      const rentRocMonth=billPeriod?billPeriod.rocMonth:roc.month;
+      const rentPeriodSource=billPeriod?"billPeriod":"accountDate";
+
       // 租金費用加總（六項）
       const feeSum=(Number(r[col("租金")])||0)
         +(Number(r[col("水費")])||0)
@@ -1270,6 +1291,7 @@ function parseThirdXlsx(data){
       return{
         objName, tenant:r[col("承租人姓名")]||"",
         dateKey:roc.dateKey, rocStr:roc.str, rocYear:roc.year, rocMonth:roc.month,
+        rentRocYear, rentRocMonth, rentPeriodSource,
         amount:totalAmt,
         feeSum,       // 租金+水電等加總
         otherAmt,     // 差額（押金 or 管理費）
@@ -2021,7 +2043,7 @@ function renderFangResult(){
       <td class="mono">${s.rocStr}</td>
       <td class="mono right">${fmtMoney(s.amount)}</td>
       <td class="mono">${s.last5||"—"}</td>
-      <td>${isDepo?'<span class="tag blue">押金</span>':'<span class="tag ok">租金</span>'}</td>
+      <td>${isDepo?'<span class="tag blue">押金</span>':`<span class="tag ok">租金 ${s.rentRocYear+pad2(s.rentRocMonth)}</span><br><span style="font-size:10.5px;color:var(--ink-faint);">${s.rentPeriodSource==="billPeriod"?"依帳單區間":"依入帳日期推算"}</span>`}</td>
       <td class="mono">${m?m.code:'<span class="tag warn">未比對到房源</span>'}</td>
     `;
     tbM.appendChild(tr);
@@ -2183,7 +2205,7 @@ function buildThirdPartyLines(item){
   if(!m) return [];
   const name=m.matchedName;
   const code=m.code;
-  const roc=s.rocYear+pad2(s.rocMonth);
+  const roc=s.rentRocYear+pad2(s.rentRocMonth);
   const tenant=s.tenant;
   const lines=[];
 
@@ -2439,7 +2461,7 @@ document.getElementById("fang-btn-cashflow").addEventListener("click",()=>{
     const banks=Array.isArray(item.bank)?item.bank:[item.bank];
     // 物件名稱 = 房源名稱 + 房號（remainder）
     const objName=m.remainder?`${m.matchedName}-${m.remainder.replace(/^-+/,"")}`:m.matchedName;
-    const summary=`${objName}-${s.rocYear+pad2(s.rocMonth)}租金-${s.tenant}`;
+    const summary=`${objName}-${s.rentRocYear+pad2(s.rentRocMonth)}租金-${s.tenant}`;
     banks.forEach(b=>{
       const idx=bankIndexMap.get(b);
       if(idx!==undefined) bankSummaryMap.set(idx, summary);

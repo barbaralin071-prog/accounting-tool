@@ -2840,6 +2840,23 @@ function parseExpenseCashflowXlsx(data){
   return allRows;
 }
 
+// 「寶興70」這棟比較特殊：同一棟樓依樓層分成三個不同的客戶供應商代號，
+// 金流表寫法是「寶興70-2B」「寶興70-3B」「寶興70-4B」這種「寶興70+樓層數字+房號字母」的格式，
+// 房號字母(A/B/C/D...)不影響代號，只有樓層數字(2/3/4)決定要用哪一個代號，
+// 所以不能用一般的「房源名稱開頭比對」邏輯，要另外訂規則、且要優先於一般比對檢查。
+const BAOXING70_FLOOR_MAP={
+  "2":{code:"AH1150406", matchedName:"寶興70(2F短租)", service:"合作拆帳-HC", rentMode:"短租管理", deptNo:""},
+  "3":{code:"AH1150706", matchedName:"寶興70-3F",       service:"代管-D",     rentMode:"年租管理", deptNo:"陳彥宇"},
+  "4":{code:"AH11406350", matchedName:"寶興70",          service:"代管-D",     rentMode:"年租管理", deptNo:""},
+};
+function matchBaoxing70(desc){
+  const m=desc.match(/寶興70[\s\-(]?([234])/);
+  if(!m) return null;
+  const info=BAOXING70_FLOOR_MAP[m[1]];
+  if(!info) return null;
+  return{code:info.code, matchedName:info.matchedName, remainder:"", service:info.service, rentMode:info.rentMode, deptNo:info.deptNo};
+}
+
 // 從支出金流表的說明文字裡找房源代號。
 // 房源資料庫是照名稱長度由長到短排序的，所以優先直接拿「整段說明」去比對——
 // 因為 matchHousing 本身就是找「說明開頭是不是某個房源名稱」，只要房源名稱剛好在說明最前面
@@ -2850,6 +2867,9 @@ function parseExpenseCashflowXlsx(data){
 // 所以務必先試整段，不能只靠拆解版本。
 function matchHousingFromDesc(desc){
   if(!desc) return null;
+  // 寶興70 依樓層決定代號，是特殊規則，要優先檢查
+  const bx=matchBaoxing70(desc);
+  if(bx) return bx;
   // 第一優先：整段說明直接比對（含空格版本也試一次）
   let m=matchHousing(desc.trim());
   if(m) return m;

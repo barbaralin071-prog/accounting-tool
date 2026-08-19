@@ -508,9 +508,12 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       <div class="card" id="fang-pay-lizhang-card" style="margin-top:14px;display:none;">
         <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔（支出）</div>
         <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
-          傳票匯入文中系統後，系統會回傳真正的傳票號碼，請在下面每個日期各自填入對應的傳票號碼，再產生立帳檔。
-          立帳檔只會抓傳票裡科目代號為 <strong>131450-01</strong> 的那些列（退押金、屋主租金代付款等）。
-          立帳單號的流水序號跟房管收入那邊共用同一份記錄，同一天不管是收入還是支出的立帳，序號都不會撞。
+          下面每一列對應到「分類拆出來的一個獨立傳票檔案」（例如退押金_房管_日期.xlsx），
+          請照你實際匯入文中的順序，把每個檔案各自拿到的真正傳票號碼填進去，再產生立帳檔（也是一個檔案對應一個立帳檔）。
+          目前僅涵蓋退押金／屋主出款這類拆出來的獨立檔案，主檔（依工作頁分頁、可能橫跨多天的那份）暫不支援立帳，之後有需要再擴充。
+          立帳檔只會抓傳票裡科目代號為 <strong>131450-01</strong> 的那些列。
+          立帳單號的流水序號是照「每一列本身的交易日期」共用同一份記錄（跟房管收入那邊也共用），
+          就算同一天有好幾個不同檔案、對應不同的真正傳票號碼，序號還是會連續編號、不會撞。
         </div>
         <div id="fang-pay-lizhang-inputs"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
@@ -3160,14 +3163,9 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
 
   XLSX.writeFile(wb,"傳票匯入_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
 
-  // 依日期分組，存起來供「產生立帳檔（支出）」使用
+  // 立帳批次改成在每個「分類拆出的獨立檔案」實際產生時各自登記（見下方），
+  // 主檔(依原始工作頁分頁、可能橫跨多天的那份)目前先不納入立帳，範圍限定在退押金等分類檔案。
   fangPayVoucherBatches.clear();
-  allRowsFlat.forEach(r=>{
-    const d=r[3];
-    if(!fangPayVoucherBatches.has(d)) fangPayVoucherBatches.set(d,[]);
-    fangPayVoucherBatches.get(d).push(r);
-  });
-  renderPayLizhangInputs();
 
   // ── 按單號分類產出獨立 Excel ──
   const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
@@ -3269,9 +3267,13 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
       const wbOut=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wbOut,ws,"傳票累積檔");
       const dateSafe=String(dateStr).replace(/\//g,"-");
-      XLSX.writeFile(wbOut,`${cat}_${dateSafe}.xlsx`);
+      const fileKey=`${cat}_${dateSafe}`; // 跟實際下載的檔名一致，一個檔案一筆立帳批次
+      XLSX.writeFile(wbOut,`${fileKey}.xlsx`);
+      fangPayVoucherBatches.set(fileKey, byDate.get(dateStr));
     });
   });
+
+  renderPayLizhangInputs();
 
 });
 
@@ -3288,15 +3290,16 @@ function renderPayLizhangInputs(){
   if(!fangPayVoucherBatches.size){ card.style.display="none"; return; }
   card.style.display="block";
   wrap.innerHTML="";
-  [...fangPayVoucherBatches.keys()].sort().forEach(dateStr=>{
-    const rowCount=fangPayVoucherBatches.get(dateStr).length;
-    const lizhangCount=fangPayVoucherBatches.get(dateStr).filter(r=>r[4]==="131450-01").length;
+  [...fangPayVoucherBatches.keys()].sort().forEach(fileKey=>{
+    const rows=fangPayVoucherBatches.get(fileKey);
+    const rowCount=rows.length;
+    const lizhangCount=rows.filter(r=>r[4]==="131450-01").length;
     const div=document.createElement("div");
     div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
     div.innerHTML=`
-      <span style="min-width:110px;font-size:13px;">${dateStr}</span>
+      <span style="min-width:220px;font-size:13px;">${fileKey}.xlsx</span>
       <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
-      <input type="text" class="fang-pay-lizhang-vnum" data-date="${dateStr}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+      <input type="text" class="fang-pay-lizhang-vnum" data-file="${fileKey}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
     `;
     wrap.appendChild(div);
   });
@@ -3305,53 +3308,56 @@ function renderPayLizhangInputs(){
 document.getElementById("fang-pay-btn-lizhang").addEventListener("click",()=>{
   clearErr("fang-pay-lizhang-err");
   const inputs=[...document.querySelectorAll(".fang-pay-lizhang-vnum")];
-  const vnumByDate={};
+  const vnumByFile={};
   inputs.forEach(inp=>{
     const v=inp.value.trim();
-    if(v) vnumByDate[inp.dataset.date]=v;
+    if(v) vnumByFile[inp.dataset.file]=v;
   });
-  if(!Object.keys(vnumByDate).length){
-    showErr("fang-pay-lizhang-err","請至少填一個日期對應的真正傳票號碼");
+  if(!Object.keys(vnumByFile).length){
+    showErr("fang-pay-lizhang-err","請至少填一個檔案對應的真正傳票號碼");
     return;
   }
 
   const LIZHANG_CODES_PAY=["131450-01"];
-  const seqMap=fangLoadLizhangSeqMap(); // 跟房管收入共用同一份序號記錄
+  // 立帳單號的流水序號一樣是照「每一列本身的交易日期」共用記錄（跟房管收入那邊共用同一份），
+  // 不是照檔案分——這樣就算同一天剛好有兩個不同檔案（各自拿到不同的真正傳票號碼），
+  // 立帳單號的序號還是會連續往下編、不會撞號。
+  const seqMap=fangLoadLizhangSeqMap();
   let anyOutput=false;
 
-  Object.keys(vnumByDate).sort().forEach(dateStr=>{
-    const voucherRows=fangPayVoucherBatches.get(dateStr);
+  Object.keys(vnumByFile).sort().forEach(fileKey=>{
+    const voucherRows=fangPayVoucherBatches.get(fileKey);
     if(!voucherRows) return;
-    const realVoucherNo=vnumByDate[dateStr];
+    const realVoucherNo=vnumByFile[fileKey];
 
     const outRows=[];
-    let seqInFile=seqMap[dateStr]||1000;
     voucherRows.forEach((r,idx)=>{
       const acctCode=r[4];
       if(!LIZHANG_CODES_PAY.includes(acctCode)) return;
-      seqInFile++;
-      const lizhangDateRoc=String(r[3]).replace(/\//g,"");
+      const rowDate=r[3]; // 這一列本身的交易日期，序號記錄用這個當key，不是用檔案key
+      const seqInFile=(seqMap[rowDate]||1000)+1;
+      seqMap[rowDate]=seqInFile;
+      const lizhangDateRoc=String(rowDate).replace(/\//g,"");
       const lizhangNo=lizhangDateRoc+String(seqInFile);
+      // 傳票序號＝這一列在「這個檔案」裡是第幾列（因為一個檔案對應一個真正的傳票號碼）
       const seqNo=String(idx+1).padStart(4,"0");
       outRows.push([
-        lizhangNo, acctCode, r[3], r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
+        lizhangNo, acctCode, rowDate, r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
       ]);
     });
 
     if(!outRows.length) return;
-    seqMap[dateStr]=seqInFile;
     anyOutput=true;
     const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
     const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
     ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
-    const fileDate=dateStr.replace(/\//g,"-");
-    XLSX.writeFile(wb, `立帳檔_支出_${fileDate}.xlsx`);
+    XLSX.writeFile(wb, `立帳檔_支出_${fileKey}.xlsx`);
   });
 
   if(!anyOutput){
-    showErr("fang-pay-lizhang-err","填的這些日期裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
+    showErr("fang-pay-lizhang-err","填的這些檔案裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
   }else{
     fangSaveLizhangSeqMap(seqMap);
     clearErr("fang-pay-lizhang-err");

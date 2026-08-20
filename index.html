@@ -243,6 +243,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
   <button class="tab active" data-tab="fang">🏠 房管處</button>
   <button class="tab" data-tab="biz">💼 業務處</button>
   <button class="tab" data-tab="she">🏘️ 社宅</button>
+  <button class="tab" data-tab="lottery">🎫 發票對獎</button>
+  <button class="tab" data-tab="lottery">🎉 發票對獎</button>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -1010,6 +1012,93 @@ button.btn.ghost:hover{background:var(--accent-soft);}
   </div>
 
 </div><!-- /panel-she -->
+
+<!-- ══════════════════════════════════════════
+     發票對獎 Panel
+════════════════════════════════════════════ -->
+<div class="panel" id="panel-lottery">
+
+  <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
+    統一發票每兩個月開獎一次（單數月25日公布），這裡幫你核對這期開立的所有發票有沒有中獎。
+    中獎號碼要自己貼上去（瀏覽器沒辦法直接連財政部網站抓資料），其餘對獎、算獎金全部自動處理。
+  </div>
+
+  <div class="card">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">1️⃣ 貼上本期中獎號碼</div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:10px;">
+      <div>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;">特別獎（1,000萬）</label>
+        <input type="text" id="lottery-special" maxlength="8" placeholder="8碼數字" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:monospace;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;">特獎（200萬）</label>
+        <input type="text" id="lottery-grand" maxlength="8" placeholder="8碼數字" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:monospace;">
+      </div>
+      <div></div>
+      <div>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;">頭獎 第1組（20萬）</label>
+        <input type="text" id="lottery-first1" maxlength="8" placeholder="8碼數字" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:monospace;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;">頭獎 第2組（20萬）</label>
+        <input type="text" id="lottery-first2" maxlength="8" placeholder="8碼數字" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:monospace;">
+      </div>
+      <div>
+        <label style="font-size:12px;color:var(--ink-soft);display:block;margin-bottom:4px;">頭獎 第3組（20萬）</label>
+        <input type="text" id="lottery-first3" maxlength="8" placeholder="8碼數字" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:monospace;">
+      </div>
+    </div>
+    <div style="font-size:11.5px;color:var(--ink-faint);">
+      二～六獎不用另外填，都是用頭獎號碼的末幾碼去比對，程式會自動算。
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:14px;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">2️⃣ 上傳這期（兩個月）開立的所有發票</div>
+    <div class="dropzone" id="lottery-dz-file" style="max-width:320px;">
+      <div class="dz-icon">🧾</div>
+      <div class="dz-label">上傳電子發票開立資料</div>
+      <div class="dz-hint">電子發票開立_XXXX.xlsx</div>
+    </div>
+    <input type="file" id="lottery-file" accept=".xlsx" hidden>
+    <div class="errbox" id="lottery-err"></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+      <button class="btn primary" id="lottery-btn-check" disabled>開始對獎</button>
+    </div>
+  </div>
+
+  <div id="lottery-result" style="display:none;margin-top:14px;">
+    <div class="card">
+      <div class="match-summary" style="grid-template-columns:repeat(2,1fr);">
+        <div class="ms-cell ok">
+          <div class="ms-num" id="lottery-cnt-win">0</div>
+          <div class="ms-lbl">🎉 中獎張數</div>
+        </div>
+        <div class="ms-cell blue">
+          <div class="ms-num" id="lottery-cnt-total">0</div>
+          <div class="ms-lbl">💰 中獎總金額</div>
+        </div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:10px;">
+        <table>
+          <thead><tr>
+            <th>#</th><th>發票號碼</th><th>獎別</th><th class="right">獎金</th>
+            <th>買受人</th><th>Email</th><th>發票日期</th>
+          </tr></thead>
+          <tbody id="lottery-tb"></tbody>
+        </table>
+      </div>
+      <div class="actbar">
+        <div class="bal" id="lottery-status">—</div>
+        <div class="btns">
+          <button class="btn secondary" id="lottery-btn-reset">重新上傳</button>
+          <button class="btn primary" id="lottery-btn-download">下載中獎清單</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /panel-lottery -->
 
 <footer style="margin-top:32px;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-faint);display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;">
   <span>房源版本：2026-06-17，共 282 筆</span>
@@ -6537,6 +6626,189 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     warnEl.style.display="block";
     warnEl.innerHTML=fileNote;
   }
+});
+
+/* ══════════════════════════════════════
+   發票對獎
+   統一發票對獎規則（財政部公告）：
+   特別獎：末8碼與特別獎號碼完全相同 → 1,000萬
+   特獎：  末8碼與特獎號碼完全相同   → 200萬
+   頭獎：  末8碼與3組頭獎號碼其中一組完全相同 → 20萬
+   二獎：  末7碼與任一頭獎號碼末7碼相同 → 4萬
+   三獎：  末6碼相同 → 1萬
+   四獎：  末5碼相同 → 4千
+   五獎：  末4碼相同 → 1千
+   六獎：  末3碼相同 → 200
+   （中獎之發票如同時對中多個獎項，以最高獎項為準，不重複列計）
+══════════════════════════════════════ */
+const LOTTERY_PRIZES=[
+  {level:"特別獎", amount:10000000, digits:8, type:"special"},
+  {level:"特獎",   amount:2000000,  digits:8, type:"grand"},
+  {level:"頭獎",   amount:200000,   digits:8, type:"first"},
+  {level:"二獎",   amount:40000,    digits:7, type:"first"},
+  {level:"三獎",   amount:10000,    digits:6, type:"first"},
+  {level:"四獎",   amount:4000,     digits:5, type:"first"},
+  {level:"五獎",   amount:1000,     digits:4, type:"first"},
+  {level:"六獎",   amount:200,      digits:3, type:"first"},
+];
+
+// 判斷一張發票的末8碼數字對中哪個獎項，回傳{level,amount}或null(沒中獎)
+function checkLotteryWin(invNo8, numbers){
+  const{special, grand, firsts}=numbers;
+  if(special && invNo8===special) return{level:"特別獎", amount:10000000};
+  if(grand && invNo8===grand) return{level:"特獎", amount:2000000};
+  // 頭獎～六獎：末N碼比對，由高獎項到低獎項依序檢查，中最高的就停止
+  const tiers=[
+    {level:"頭獎", amount:200000, n:8},
+    {level:"二獎", amount:40000,  n:7},
+    {level:"三獎", amount:10000,  n:6},
+    {level:"四獎", amount:4000,   n:5},
+    {level:"五獎", amount:1000,   n:4},
+    {level:"六獎", amount:200,    n:3},
+  ];
+  for(const tier of tiers){
+    const suffix=invNo8.slice(8-tier.n);
+    const hit=firsts.some(f=>f && f.slice(8-tier.n)===suffix);
+    if(hit) return{level:tier.level, amount:tier.amount};
+  }
+  return null;
+}
+
+function parseInvoiceListXlsx(data){
+  const wb=XLSX.read(data,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const hi=aoa.findIndex(r=>r&&r.some(c=>c==="發票號碼"));
+  if(hi===-1) throw new Error("找不到「發票號碼」欄位，請確認是電子發票開立格式");
+  const headers=aoa[hi];
+  const col=n=>headers.indexOf(n);
+  return aoa.slice(hi+1)
+    .filter(r=>r[col("發票號碼")]!=null && String(r[col("發票號碼")]).trim())
+    .map(r=>{
+      const invoiceNoRaw=String(r[col("發票號碼")]).trim();
+      // 發票號碼格式通常是「2碼英文字軌＋8碼數字」，對獎只看後8碼數字，字軌不影響對獎
+      const digitsM=invoiceNoRaw.match(/(\d{8})\s*$/);
+      const invNo8=digitsM?digitsM[1]:"";
+      let dateStr="";
+      const dv=r[col("發票日期")];
+      if(dv){
+        try{ dateStr=String(dv).slice(0,10); }catch(e){}
+      }
+      return{
+        invoiceNo:invoiceNoRaw, invNo8,
+        buyer:r[col("客戶名稱")]||"",
+        email:r[col("客戶信箱")]||"",
+        total:Number(r[col("總金額")])||0,
+        dateStr,
+      };
+    })
+    .filter(r=>r.invNo8);
+}
+
+let lotteryState={invoices:[], results:[]};
+
+function lotteryGetNumbers(){
+  const clean=s=>s.replace(/\D/g,"");
+  return{
+    special:clean(document.getElementById("lottery-special").value),
+    grand:clean(document.getElementById("lottery-grand").value),
+    firsts:[
+      clean(document.getElementById("lottery-first1").value),
+      clean(document.getElementById("lottery-first2").value),
+      clean(document.getElementById("lottery-first3").value),
+    ].filter(s=>s.length===8),
+  };
+}
+
+function lotteryUpdateCheckBtn(){
+  const numbers=lotteryGetNumbers();
+  const hasAnyNumber=numbers.special||numbers.grand||numbers.firsts.length>0;
+  document.getElementById("lottery-btn-check").disabled=!(hasAnyNumber&&lotteryState.invoices.length>0);
+}
+["lottery-special","lottery-grand","lottery-first1","lottery-first2","lottery-first3"].forEach(id=>{
+  document.getElementById(id).addEventListener("input", lotteryUpdateCheckBtn);
+});
+
+bindDropzone("lottery-dz-file","lottery-file",async(file,dz)=>{
+  clearErr("lottery-err");
+  try{
+    const data=await readFile(file);
+    lotteryState.invoices=parseInvoiceListXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent=`✓ ${file.name}（${lotteryState.invoices.length}筆）`;
+    lotteryUpdateCheckBtn();
+  }catch(e){
+    showErr("lottery-err", e.message);
+  }
+});
+
+document.getElementById("lottery-btn-check").addEventListener("click",()=>{
+  clearErr("lottery-err");
+  const numbers=lotteryGetNumbers();
+  if(numbers.special&&numbers.special.length!==8){ showErr("lottery-err","特別獎號碼要8碼數字"); return; }
+  if(numbers.grand&&numbers.grand.length!==8){ showErr("lottery-err","特獎號碼要8碼數字"); return; }
+
+  const results=[];
+  lotteryState.invoices.forEach(inv=>{
+    const win=checkLotteryWin(inv.invNo8, numbers);
+    if(win) results.push({...inv, ...win});
+  });
+  results.sort((a,b)=>b.amount-a.amount);
+  lotteryState.results=results;
+  renderLotteryResult();
+});
+
+function renderLotteryResult(){
+  const results=lotteryState.results;
+  document.getElementById("lottery-result").style.display="block";
+  document.getElementById("lottery-cnt-win").textContent=results.length;
+  const totalAmt=results.reduce((s,r)=>s+r.amount,0);
+  document.getElementById("lottery-cnt-total").textContent=fmtMoney(totalAmt);
+
+  const tb=document.getElementById("lottery-tb");
+  tb.innerHTML="";
+  results.forEach((r,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${i+1}</td>
+      <td class="mono">${r.invoiceNo}</td>
+      <td><span class="tag ok">${r.level}</span></td>
+      <td class="mono right">${fmtMoney(r.amount)}</td>
+      <td>${r.buyer}</td>
+      <td>${r.email}</td>
+      <td class="mono">${r.dateStr}</td>
+    `;
+    tb.appendChild(tr);
+  });
+  if(!results.length){
+    tb.innerHTML=`<tr><td colspan="7" style="color:var(--ink-faint);text-align:center;padding:16px;">這批發票（共${lotteryState.invoices.length}筆）沒有中獎</td></tr>`;
+  }
+
+  document.getElementById("lottery-status").textContent=
+    `共檢查 ${lotteryState.invoices.length} 張發票，中獎 ${results.length} 張，中獎總金額 ${fmtMoney(totalAmt)}`;
+}
+
+document.getElementById("lottery-btn-download").addEventListener("click",()=>{
+  const rows=[["發票號碼","獎別","獎金","買受人","Email","發票日期"]];
+  lotteryState.results.forEach(r=>{
+    rows.push([r.invoiceNo, r.level, r.amount, r.buyer, r.email, r.dateStr]);
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:16},{wch:26},{wch:12}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "中獎清單");
+  XLSX.writeFile(wb, "發票中獎清單_"+new Date().toISOString().slice(0,10)+".xlsx");
+});
+
+document.getElementById("lottery-btn-reset").addEventListener("click",()=>{
+  lotteryState={invoices:[], results:[]};
+  document.getElementById("lottery-result").style.display="none";
+  const dz=document.getElementById("lottery-dz-file");
+  dz.classList.remove("loaded");
+  dz.querySelector(".dz-label").textContent="上傳電子發票開立資料";
+  document.getElementById("lottery-file").value="";
+  document.getElementById("lottery-btn-check").disabled=true;
+  clearErr("lottery-err");
 });
 </script>
 </div><!-- /app -->

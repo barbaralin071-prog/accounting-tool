@@ -3232,12 +3232,35 @@ let fangRefundState={rows:[], results:[], cashflowRows:null};
 
 // 把退款單的每一筆，用「日期＋金額」對回支出金流表裡的位置，取得金流表上的原始順序。
 // 對不到的（金流表沒上傳、或真的找不到對應的那一筆）一律排在最後面，並標記提醒。
+// 把退款單的每一筆，對回支出金流表裡的位置，取得金流表上的原始順序。
+// 因為退款單的「放款時間」（實際撥款時間）跟金流表的「帳務日期」（銀行入帳日）
+// 有時候會差一兩天，所以採用多層次比對，一層比對不到才放寬到下一層，盡量不要漏掉：
+//   第1層：日期＋金額都精準相符（最準）
+//   第2層：金流表說明含「退押金」＋金額相符，日期在±5天內，取日期最接近的那筆
+//   第3層：金流表說明含「退押金」＋金額相符（不限日期範圍）
+// 對不到的（金流表沒上傳、或真的找不到）才會排在最後面。
 function matchRefundOrderToCashflow(rows, cashflowRows){
   if(!cashflowRows||!cashflowRows.length){
     return rows.map(row=>({...row, cfIndex:null}));
   }
   const used=new Set();
+
+  function dayDiff(a,b){
+    // rocDateStr 格式 115/07/20，簡單轉成可比較的數字
+    const toNum=s=>{
+      if(!s) return null;
+      const p=s.split("/").map(Number);
+      if(p.length!==3||p.some(isNaN)) return null;
+      return p[0]*10000+p[1]*100+p[2];
+    };
+    const na=toNum(a), nb=toNum(b);
+    if(na==null||nb==null) return Infinity;
+    // 用簡單的天數差估算（不用真的算日曆，年月日相減取絕對值的量級足夠判斷「差不多」）
+    return Math.abs(na-nb);
+  }
+
   return rows.map(row=>{
+    // 第1層：日期＋金額精準相符
     let bestIdx=-1;
     for(let i=0;i<cashflowRows.length;i++){
       if(used.has(i)) continue;
@@ -3245,6 +3268,27 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
       if(cf.rocDateStr===row.rocDateStr && Math.abs(cf.expense-row.total)<0.5){
         bestIdx=i;
         break;
+      }
+    }
+    // 第2層：說明含「退押金」＋金額相符，日期差距在合理範圍內，取最接近的
+    if(bestIdx<0){
+      let bestDiff=Infinity;
+      for(let i=0;i<cashflowRows.length;i++){
+        if(used.has(i)) continue;
+        const cf=cashflowRows[i];
+        if(!cf.desc||!cf.desc.includes("退押金")) continue;
+        if(Math.abs(cf.expense-row.total)>=0.5) continue;
+        const diff=dayDiff(cf.rocDateStr, row.rocDateStr);
+        if(diff<=5 && diff<bestDiff){ bestDiff=diff; bestIdx=i; }
+      }
+    }
+    // 第3層：說明含「退押金」＋金額相符，不限日期
+    if(bestIdx<0){
+      for(let i=0;i<cashflowRows.length;i++){
+        if(used.has(i)) continue;
+        const cf=cashflowRows[i];
+        if(!cf.desc||!cf.desc.includes("退押金")) continue;
+        if(Math.abs(cf.expense-row.total)<0.5){ bestIdx=i; break; }
       }
     }
     if(bestIdx>=0){ used.add(bestIdx); return{...row, cfIndex:bestIdx}; }

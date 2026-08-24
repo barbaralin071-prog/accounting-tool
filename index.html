@@ -540,6 +540,9 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       支出金流表的說明文字已經是簡化過的、沒有這些細節。年租管理維持原本押金退款打法；短租管理依包租/合作拆帳分開處理。
       另外可以選填上傳「對應的支出金流表」，工具會用「日期＋金額」把退款單裡的每一筆對回金流表上的位置，
       輸出的傳票就會照金流表原本的順序排列（不上傳的話，就照退款單原始上傳的順序）。
+      <strong>短租＋包租的案例，因為電費要記銷項稅額（2290），需要一張實際開立的電子發票才能記帳，
+      所以也要上傳「電子發票」檔案，工具會用金額去對應到哪一張發票、把發票號碼帶進傳票摘要；
+      對不到發票的那幾筆，不會硬產生分錄，會標記人工處理。</strong>
     </div>
     <div class="card">
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
@@ -559,9 +562,21 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           </div>
           <input type="file" id="fang-refund-file-cashflow" accept=".xlsx" hidden>
         </div>
+        <div>
+          <div class="dropzone" id="fang-refund-dz-invoice" style="max-width:320px;">
+            <div class="dz-icon">🧾</div>
+            <div class="dz-label">上傳電子發票（短租電費需要）</div>
+            <div class="dz-hint">電子發票開立.xlsx</div>
+          </div>
+          <input type="file" id="fang-refund-file-invoice" accept=".xlsx" hidden>
+        </div>
       </div>
       <div class="errbox" id="fang-refund-err"></div>
       <div id="fang-refund-result" style="display:none;margin-top:14px;">
+        <div id="fang-refund-consistency" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fff3f0;border:1px solid #f5b8a8;border-radius:8px;">
+          <div style="font-size:13px;font-weight:700;color:#c0392b;margin-bottom:8px;">⚠ 一致性檢查</div>
+          <div id="fang-refund-consistency-body" style="font-size:12.5px;color:#7a2e1f;line-height:1.7;"></div>
+        </div>
         <div class="match-summary" style="grid-template-columns:repeat(2,1fr);">
           <div class="ms-cell ok">
             <div class="ms-num" id="fang-refund-cnt-ok">0</div>
@@ -3112,7 +3127,7 @@ function extractRefundHouseText(note){
   return m?m[1]:note;
 }
 
-function buildRefundVoucherLines(row){
+function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
   const{note, total, dept, tenant, rocDateStr, rocYear}=row;
 
   // 商空案例：固定打法，不用解析備註細節。
@@ -3177,14 +3192,36 @@ function buildRefundVoucherLines(row){
   // 只有真的有電費才產生電費相關的分錄，避免出現金額是0的空分錄
   if(parsed.electricFee>0){
     if(isPartner&&hasDaishou){
-      // 合作拆帳：電費不拆稅，走代收款
+      // 合作拆帳：電費不拆稅，走代收款，不需要發票
       lines.push({acctCode:"2205-01", custCode:code, dc:2, amount:parsed.electricFee, summary:note, liChongOverride:"Y"});
     }else{
-      // 包租：電費要拆營業稅5%（未稅=電費/1.05四捨五入，稅額=電費-未稅）
-      const untaxed=Math.round(parsed.electricFee/1.05);
-      const tax=parsed.electricFee-untaxed;
-      lines.push({acctCode:"4101-04", custCode:code, dc:2, amount:untaxed, summary:note, deptNo:"001", liChongOverride:"N"});
-      lines.push({acctCode:"2290", custCode:code, dc:2, amount:tax, summary:note, liChongOverride:"N"});
+      // 包租：電費要記銷項稅額(2290)，這筆稅額要有實際開立的電子發票才能記帳，
+      // 所以要用金額去比對電子發票清單，找不到對應發票就不產生分錄、標記人工處理，
+      // 不能自己算5%稅金硬套（因為發票上的未稅/稅額才是真正申報用的數字，四捨五入可能跟自算的差1元）。
+      if(!invoices||!invoices.length){
+        return{ok:false, reason:`房源「${houseLabel}」是包租，電費 ${fmtMoney(parsed.electricFee)} 需要對應的電子發票才能記銷項稅額，請上傳電子發票檔案`};
+      }
+      // 找候選發票：金額要相符，而且發票地址要能對應到「同一個房源」才算數，
+      // 不能只看金額一樣就當作同一筆——避免不同房源剛好電費金額相同時被誤配。
+      let invIdx=-1, invAmountOnlyMatch=false;
+      for(let i=0;i<invoices.length;i++){
+        if(usedInvoiceIdx.has(i)) continue;
+        if(Math.abs(invoices[i].total-parsed.electricFee)>=0.5) continue;
+        invAmountOnlyMatch=true;
+        const invHouseMatch=matchHousingFromDesc(invoices[i].caseAddr);
+        if(invHouseMatch && invHouseMatch.code===code){ invIdx=i; break; }
+      }
+      if(invIdx<0){
+        const reason=invAmountOnlyMatch
+          ?`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 雖然有金額相符的發票，但發票上的房源地址對不到同一個房源，需人工確認`
+          :`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 在上傳的電子發票裡找不到金額相符的發票，需人工確認`;
+        return{ok:false, reason};
+      }
+      usedInvoiceIdx.add(invIdx);
+      const inv=invoices[invIdx];
+      const noteWithInv=`${note}-${String(inv.invoiceNo||"").replace(/-/g,"")}`;
+      lines.push({acctCode:"4101-04", custCode:code, dc:2, amount:Math.round(inv.untaxed), summary:noteWithInv, deptNo:"001", liChongOverride:"N"});
+      lines.push({acctCode:"2290", custCode:code, dc:2, amount:Math.round(inv.tax), summary:noteWithInv, liChongOverride:"N"});
     }
   }
 
@@ -3228,7 +3265,7 @@ function parseRefundVoucherXlsx(data){
     .filter(r=>r.note && r.total>0);
 }
 
-let fangRefundState={rows:[], results:[], cashflowRows:null};
+let fangRefundState={rows:[], results:[], cashflowRows:null, invoices:null};
 
 // 把退款單的每一筆，用「日期＋金額」對回支出金流表裡的位置，取得金流表上的原始順序。
 // 對不到的（金流表沒上傳、或真的找不到對應的那一筆）一律排在最後面，並標記提醒。
@@ -3241,7 +3278,7 @@ let fangRefundState={rows:[], results:[], cashflowRows:null};
 // 對不到的（金流表沒上傳、或真的找不到）才會排在最後面。
 function matchRefundOrderToCashflow(rows, cashflowRows){
   if(!cashflowRows||!cashflowRows.length){
-    return rows.map(row=>({...row, cfIndex:null}));
+    return{rows: rows.map(row=>({...row, cfIndex:null})), unmatchedCfRows:[]};
   }
   const used=new Set();
 
@@ -3259,7 +3296,7 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
     return Math.abs(na-nb);
   }
 
-  return rows.map(row=>{
+  const mappedRows=rows.map(row=>{
     // 第1層：日期＋金額精準相符
     let bestIdx=-1;
     for(let i=0;i<cashflowRows.length;i++){
@@ -3294,13 +3331,26 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
     if(bestIdx>=0){ used.add(bestIdx); return{...row, cfIndex:bestIdx}; }
     return{...row, cfIndex:null};
   });
+
+  // 反過來檢查：金流表裡有「退押金」字樣的項目，卻沒有任何退款單去對應到它——
+  // 代表退款單可能漏傳了這幾筆，要另外提醒。
+  const unmatchedCfRows=cashflowRows
+    .map((cf,i)=>({cf,i}))
+    .filter(({cf,i})=>cf.desc&&cf.desc.includes("退押金")&&!used.has(i))
+    .map(({cf})=>cf);
+
+  return{rows:mappedRows, unmatchedCfRows};
 }
 
 function fangRefundRebuild(){
   if(!fangRefundState.rawRows) return;
-  const ordered=matchRefundOrderToCashflow(fangRefundState.rawRows, fangRefundState.cashflowRows);
+  const{rows:ordered, unmatchedCfRows}=matchRefundOrderToCashflow(fangRefundState.rawRows, fangRefundState.cashflowRows);
   fangRefundState.rows=ordered;
-  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row)}));
+  fangRefundState.unmatchedCfRows=unmatchedCfRows;
+  const usedInvoiceIdx=new Set(); // 每次重新計算都要歸零，避免累積上次殘留的使用紀錄
+  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row, fangRefundState.invoices, usedInvoiceIdx)}));
+  // 上傳的電子發票裡，沒有被任何退款項目用到的——可能開錯發票、或退款單漏傳，提醒人工看一下
+  fangRefundState.unusedInvoices=(fangRefundState.invoices||[]).filter((inv,i)=>!usedInvoiceIdx.has(i));
   renderRefundResult();
 }
 
@@ -3330,6 +3380,19 @@ bindDropzone("fang-refund-dz-cashflow","fang-refund-file-cashflow",async(file,dz
   }
 });
 
+bindDropzone("fang-refund-dz-invoice","fang-refund-file-invoice",async(file,dz)=>{
+  clearErr("fang-refund-err");
+  try{
+    const data=await readFile(file);
+    fangRefundState.invoices=parseBizInvoiceXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${fangRefundState.invoices.length}筆）`;
+    fangRefundRebuild();
+  }catch(e){
+    showErr("fang-refund-err", e.message);
+  }
+});
+
 function renderRefundResult(){
   // 有金流表對照時，照金流表順序排（cfIndex小的在前）；對不到的排最後
   const results=fangRefundState.results.slice().sort((a,b)=>{
@@ -3344,6 +3407,29 @@ function renderRefundResult(){
   const manualList=results.filter(r=>!r.result.ok);
   document.getElementById("fang-refund-cnt-ok").textContent=okList.length;
   document.getElementById("fang-refund-cnt-manual").textContent=manualList.length;
+
+  // ── 一致性檢查：金流表↔退款單、電子發票↔退款單，兩邊互相有沒有兜不起來的項目 ──
+  const consistencyEl=document.getElementById("fang-refund-consistency");
+  const consistencyBody=document.getElementById("fang-refund-consistency-body");
+  const consistencyItems=[];
+  const unmatchedRefundCount=results.filter(r=>fangRefundState.cashflowRows&&fangRefundState.cashflowRows.length&&r.row.cfIndex==null).length;
+  if(unmatchedRefundCount>0){
+    consistencyItems.push(`🔸 <strong>退款單有 ${unmatchedRefundCount} 筆</strong>在金流表裡找不到對應的「退押金」項目（表格裡「排序」欄顯示「對不到」的那幾筆），請確認金流表是不是漏傳了這幾筆、或退款單本身寫錯金額/日期。`);
+  }
+  if((fangRefundState.unmatchedCfRows||[]).length>0){
+    const list=fangRefundState.unmatchedCfRows.map(cf=>`${cf.rocDateStr||"—"} ${cf.desc}（${fmtMoney(cf.expense)}）`).join("<br>　");
+    consistencyItems.push(`🔸 <strong>金流表有 ${fangRefundState.unmatchedCfRows.length} 筆</strong>寫著「退押金」，但退款單裡完全找不到對應的那一筆，代表退款單可能漏傳了這幾筆：<br>　${list}`);
+  }
+  if((fangRefundState.unusedInvoices||[]).length>0){
+    const list=fangRefundState.unusedInvoices.map(inv=>`${inv.invoiceNo}（${inv.buyerName||"無名稱"}／${fmtMoney(inv.total)}）`).join("、");
+    consistencyItems.push(`🔸 上傳的電子發票裡，有 <strong>${fangRefundState.unusedInvoices.length} 張</strong>沒有被任何一筆退款用到，請確認是不是開錯發票、或退款單/金流表漏傳了對應的那筆：${list}`);
+  }
+  if(consistencyItems.length){
+    consistencyEl.style.display="block";
+    consistencyBody.innerHTML=consistencyItems.join("<br><br>");
+  }else{
+    consistencyEl.style.display="none";
+  }
 
   const hasCashflow=!!(fangRefundState.cashflowRows&&fangRefundState.cashflowRows.length);
   const tb=document.getElementById("fang-refund-tb");
@@ -3785,11 +3871,25 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
       const dateSafe=String(dateStr).replace(/\//g,"-");
       const fileKey=`${cat}_${dateSafe}`; // 跟實際下載的檔名一致，一個檔案一筆立帳批次
       XLSX.writeFile(wbOut,`${fileKey}.xlsx`);
+      // 「退押金_短租」這裡下載出來的還是用通用公式(131450-01)打的暫時版本，
+      // 不是短租真正的打法（短租要另外上傳退款單＋電子發票，透過下面「短租退款傳票」那個專屬流程才會產生正確的傳票）。
+      // 所以這個分類不納入立帳批次，避免會計誤把這個暫時版本拿去立帳。
+      if(cat==="退押金_短租") return;
       fangPayVoucherBatches.set(fileKey, byDate.get(dateStr));
     });
   });
 
   renderPayLizhangInputs();
+
+  // 提醒：如果這次有短租退押金，下載出來的「退押金_短租」是用通用公式打的暫時版本，
+  // 不是正確的短租打法，要改用下面「短租退款傳票」那個專屬流程（上傳退款單＋電子發票）重新產生正確的傳票。
+  const hasShortTermDeposit=fileGroups.has("退押金_短租");
+  const statusEl=document.getElementById("fang-pay-voucher-status");
+  if(hasShortTermDeposit){
+    statusEl.innerHTML=`✓ 傳票已下載。<br><span style="color:#c0392b;">⚠ 這次有短租退押金，「退押金_短租」那份是用通用公式打的暫時版本，不是正確的短租打法（不含電費銷項稅額），請忽略那份，改用下方「短租退款傳票」上傳退款單＋電子發票，重新產生正確的傳票。</span>`;
+  }else{
+    statusEl.textContent="✓ 傳票已下載";
+  }
 
 });
 

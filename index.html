@@ -3090,26 +3090,26 @@ function matchHousingFromDesc(desc){
 const REFUND_FEE_KEYWORDS=["代收電費","電費","匯費","少匯","匯差","房費","垃圾費","放鑰匙費","熱水器","空車費用","清潔費","管理費","行李搬運費","續住","續約","設備賠償金額","設備賠償","賠償金額","賠償費","賠償"];
 
 // 解析「此筆請款備註」，抓出押金金額跟電費淨額。
-// 匯費完全忽略，不列入計算（6270要不要開、金額多少，改用金流表本身的「匯費」欄位決定，不靠備註文字反推）。
-// 「+」加項（例如全家寄放鑰匙包裹費）直接併入電費淨額一起加減（加項會讓淨電費變小），
-// 不再另開一行、也不再視為需要人工處理的情況。
+// 押金金額之後的文字，只要是「加減號＋文字＋數字」的格式，一律當作一個項目算進電費淨額
+// （不再限定要對到特定關鍵字清單——因為備註寫法太多變化，關鍵字永遠列不完，
+// 只要備註本身有寫清楚加減號，這個做法就能自動涵蓋任何名目，包含以後才出現的新名目）。
+// 「匯費」是唯一的例外：完全忽略，不列入電費淨額計算
+// （6270要不要開、金額多少，改用金流表本身的「匯費」欄位決定，不靠備註文字反推；
+// 這裡的fee只保留給房管年租那邊用，維持原本已驗證過的用法）。
+// 「+」加項直接併入電費淨額一起加減（加項會讓淨電費變小），不再另開一行、也不再視為需要人工處理的情況。
 function parseRefundNote(note){
   if(!note) return{ok:false, reason:"備註是空的"};
   const dm=note.match(/(?:押金|定金)(\d+(?:\.\d+)?)/);
   if(!dm) return{ok:false, reason:"找不到「押金/定金」金額"};
   const deposit=parseFloat(dm[1]);
+  const afterDeposit=note.slice(dm.index+dm[0].length);
 
   let fee=0, signedSum=0; // fee給房管年租那邊用(維持原本驗證過的用法)；signedSum用來算短租這邊的淨電費
-  const kwPattern=REFUND_FEE_KEYWORDS.join("|");
-  const re=new RegExp(`([+\\-]?)(?:[^\\d+\\-]{0,4})?(${kwPattern})[^\\d]{0,3}(\\d+(?:\\.\\d+)?)`,"g");
+  const re=/([+\-])([^\d+\-]{0,12}?)(\d+(?:\.\d+)?)/g;
   let m;
-  while((m=re.exec(note))!==null){
-    let sign=m[1], label=m[2], amt=parseFloat(m[3]);
-    if(!sign){
-      const prefix=note.slice(Math.max(0,m.index-4), m.index);
-      sign=prefix.includes("+")?"+":"-";
-    }
-    if(label==="匯費"){
+  while((m=re.exec(afterDeposit))!==null){
+    const sign=m[1], label=m[2], amt=parseFloat(m[3]);
+    if(label.includes("匯費")){
       fee=amt; // 匯費不算進電費淨額，只給房管年租那邊用
     }else{
       signedSum+=(sign==="+"?amt:-amt);

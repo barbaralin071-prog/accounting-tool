@@ -3201,19 +3201,20 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
       if(!invoices||!invoices.length){
         return{ok:false, reason:`房源「${houseLabel}」是包租，電費 ${fmtMoney(parsed.electricFee)} 需要對應的電子發票才能記銷項稅額，請上傳電子發票檔案`};
       }
-      // 找候選發票：金額要相符，而且發票地址要能對應到「同一個房源」才算數，
-      // 不能只看金額一樣就當作同一筆——避免不同房源剛好電費金額相同時被誤配。
+      // 找候選發票：核對「客戶名稱＝退款單的承租人」＋「總金額＝備註解析出的電費」，
+      // 兩者都相符才算數（不再要求地址完全比對到同一個房源代號，比較貼近實際開票習慣）。
+      const tenantNorm=String(tenant||"").trim().replace(/\s+/g,"");
       let invIdx=-1, invAmountOnlyMatch=false;
       for(let i=0;i<invoices.length;i++){
         if(usedInvoiceIdx.has(i)) continue;
         if(Math.abs(invoices[i].total-parsed.electricFee)>=0.5) continue;
         invAmountOnlyMatch=true;
-        const invHouseMatch=matchHousingFromDesc(invoices[i].caseAddr);
-        if(invHouseMatch && invHouseMatch.code===code){ invIdx=i; break; }
+        const buyerNorm=String(invoices[i].buyerName||"").trim().replace(/\s+/g,"");
+        if(tenantNorm && buyerNorm && buyerNorm===tenantNorm){ invIdx=i; break; }
       }
       if(invIdx<0){
         const reason=invAmountOnlyMatch
-          ?`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 雖然有金額相符的發票，但發票上的房源地址對不到同一個房源，需人工確認`
+          ?`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 雖然有金額相符的發票，但發票上的客戶名稱跟退款單的承租人「${tenant||"（退款單沒有承租人姓名）"}」對不起來，需人工確認`
           :`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 在上傳的電子發票裡找不到金額相符的發票，需人工確認`;
         return{ok:false, reason};
       }

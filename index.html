@@ -3127,6 +3127,41 @@ function extractRefundHouseText(note){
   return m?m[1]:note;
 }
 
+// 承租人姓名候選清單：退款單的「戶名/廠商名稱」欄位是一個候選，
+// 「此筆請款備註」裡房源跟「押金/定金」中間夾的那段文字（通常就是承租人姓名）也是另一個候選，
+// 兩邊都收集起來，比對發票客戶名稱時只要跟任一個候選相符就算數，不會因為某一欄位剛好沒填就判定「沒有承租人姓名」。
+function extractTenantCandidates(row, houseMatch){
+  const candidates=[];
+  if(row.tenant) candidates.push(row.tenant);
+  const beforeKeyword=row.note.split(/押金|定金/)[0];
+  let rest=beforeKeyword;
+  if(houseMatch){
+    const names=[houseMatch.matchedName, ...(houseMatch.aliases||[])].filter(Boolean);
+    const trimmed=rest.trim();
+    for(const n of names){
+      if(trimmed.startsWith(n)){ rest=trimmed.slice(n.length); break; }
+    }
+  }
+  rest=rest.replace(/^[-\s]+/,"").replace(/^MRA-?/i,"").trim();
+  if(rest) candidates.push(rest);
+  return [...new Set(candidates.filter(Boolean))];
+}
+
+// 姓名模糊比對：把兩邊都拆成一個一個詞（中間用空白/逗號分隔），
+// 不要求整串文字完全相等、也不要求順序一樣，只要「詞數較少的那一邊，每個詞都出現在另一邊」就算相符。
+// 例如「Sienna Jackson」拆成[Sienna,Jackson]，「江春花 Jackson Sienna」拆成[江春花,Jackson,Sienna]，
+// 前者兩個詞都出現在後者裡面，就算相符。中文姓名沒有空白可拆的話，直接整串比較。
+function namesMatch(a,b){
+  if(!a||!b) return false;
+  const tokenize=s=>String(s).trim().toLowerCase().replace(/[,，、]/g," ").split(/\s+/).filter(Boolean);
+  const ta=tokenize(a), tb=tokenize(b);
+  if(!ta.length||!tb.length) return false;
+  if(ta.length===1&&tb.length===1) return ta[0]===tb[0];
+  const smaller=ta.length<=tb.length?ta:tb;
+  const larger=ta.length<=tb.length?tb:ta;
+  return smaller.every(tok=>larger.includes(tok));
+}
+
 function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
   const{note, total, dept, tenant, rocDateStr, rocYear}=row;
 
@@ -3201,20 +3236,22 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
       if(!invoices||!invoices.length){
         return{ok:false, reason:`房源「${houseLabel}」是包租，電費 ${fmtMoney(parsed.electricFee)} 需要對應的電子發票才能記銷項稅額，請上傳電子發票檔案`};
       }
-      // 找候選發票：核對「客戶名稱＝退款單的承租人」＋「總金額＝備註解析出的電費」，
-      // 兩者都相符才算數（不再要求地址完全比對到同一個房源代號，比較貼近實際開票習慣）。
-      const tenantNorm=String(tenant||"").trim().replace(/\s+/g,"");
+      // 找候選發票：核對「客戶名稱＝退款單的承租人（戶名/廠商名稱，或從備註解析出來的姓名）」
+      // ＋「總金額＝備註解析出的電費」，兩者都相符才算數。
+      // 姓名比對用詞彙化模糊比對，不要求完全一模一樣的整串文字、也不要求順序相同。
+      const tenantCandidates=extractTenantCandidates(row, houseMatch);
       let invIdx=-1, invAmountOnlyMatch=false;
       for(let i=0;i<invoices.length;i++){
         if(usedInvoiceIdx.has(i)) continue;
         if(Math.abs(invoices[i].total-parsed.electricFee)>=0.5) continue;
         invAmountOnlyMatch=true;
-        const buyerNorm=String(invoices[i].buyerName||"").trim().replace(/\s+/g,"");
-        if(tenantNorm && buyerNorm && buyerNorm===tenantNorm){ invIdx=i; break; }
+        const buyerName=invoices[i].buyerName;
+        if(tenantCandidates.some(cand=>namesMatch(cand,buyerName))){ invIdx=i; break; }
       }
       if(invIdx<0){
+        const candText=tenantCandidates.length?tenantCandidates.join("／"):"（退款單找不到承租人姓名）";
         const reason=invAmountOnlyMatch
-          ?`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 雖然有金額相符的發票，但發票上的客戶名稱跟退款單的承租人「${tenant||"（退款單沒有承租人姓名）"}」對不起來，需人工確認`
+          ?`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 雖然有金額相符的發票，但發票上的客戶名稱跟退款單的承租人「${candText}」對不起來，需人工確認`
           :`房源「${houseLabel}」電費 ${fmtMoney(parsed.electricFee)} 在上傳的電子發票裡找不到金額相符的發票，需人工確認`;
         return{ok:false, reason};
       }
@@ -3297,13 +3334,20 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
     return Math.abs(na-nb);
   }
 
+  // 金流表上實際出款的金額，常常比退款單「總金額」欄位多出匯費（不管備註裡有沒有明確寫出匯費金額都一樣，
+  // 匯費本身就是每筆退款都會產生的固定費用），所以金額比對不能要求完全相等，
+  // 改成容許金流表金額落在「退款單金額」到「退款單金額+20」這個小範圍內都算相符（20元已經足夠涵蓋常見的匯費金額）。
+  function amtClose(cfExpense, rowTotal){
+    return cfExpense>=rowTotal-0.5 && cfExpense<=rowTotal+20;
+  }
+
   const mappedRows=rows.map(row=>{
-    // 第1層：日期＋金額精準相符
+    // 第1層：日期＋金額相符（容許金流表金額多出匯費）
     let bestIdx=-1;
     for(let i=0;i<cashflowRows.length;i++){
       if(used.has(i)) continue;
       const cf=cashflowRows[i];
-      if(cf.rocDateStr===row.rocDateStr && Math.abs(cf.expense-row.total)<0.5){
+      if(cf.rocDateStr===row.rocDateStr && amtClose(cf.expense,row.total)){
         bestIdx=i;
         break;
       }
@@ -3315,7 +3359,7 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
         if(used.has(i)) continue;
         const cf=cashflowRows[i];
         if(!cf.desc||!cf.desc.includes("退押金")) continue;
-        if(Math.abs(cf.expense-row.total)>=0.5) continue;
+        if(!amtClose(cf.expense,row.total)) continue;
         const diff=dayDiff(cf.rocDateStr, row.rocDateStr);
         if(diff<=5 && diff<bestDiff){ bestDiff=diff; bestIdx=i; }
       }
@@ -3326,7 +3370,7 @@ function matchRefundOrderToCashflow(rows, cashflowRows){
         if(used.has(i)) continue;
         const cf=cashflowRows[i];
         if(!cf.desc||!cf.desc.includes("退押金")) continue;
-        if(Math.abs(cf.expense-row.total)<0.5){ bestIdx=i; break; }
+        if(amtClose(cf.expense,row.total)){ bestIdx=i; break; }
       }
     }
     if(bestIdx>=0){ used.add(bestIdx); return{...row, cfIndex:bestIdx}; }

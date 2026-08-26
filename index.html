@@ -3085,14 +3085,17 @@ function matchHousingFromDesc(desc){
 ══════════════════════════════════════ */
 const REFUND_FEE_KEYWORDS=["代收電費","電費","匯費","少匯","匯差","房費","垃圾費","放鑰匙費","熱水器","空車費用","清潔費","管理費","行李搬運費","續住","續約"];
 
-function parseRefundNote(note, total){
+// 解析「此筆請款備註」，抓出押金金額跟電費淨額。
+// 匯費完全忽略，不列入計算（6270要不要開、金額多少，改用金流表本身的「匯費」欄位決定，不靠備註文字反推）。
+// 「+」加項（例如全家寄放鑰匙包裹費）直接併入電費淨額一起加減（加項會讓淨電費變小），
+// 不再另開一行、也不再視為需要人工處理的情況。
+function parseRefundNote(note){
   if(!note) return{ok:false, reason:"備註是空的"};
   const dm=note.match(/(?:押金|定金)(\d+(?:\.\d+)?)/);
   if(!dm) return{ok:false, reason:"找不到「押金/定金」金額"};
   const deposit=parseFloat(dm[1]);
 
-  let fee=0, otherSum=0, hasPlus=false;
-  const otherItems=[];
+  let fee=0, signedSum=0; // fee給房管年租那邊用(維持原本驗證過的用法)；signedSum用來算短租這邊的淨電費
   const kwPattern=REFUND_FEE_KEYWORDS.join("|");
   const re=new RegExp(`([+\\-]?)(?:[^\\d+\\-]{0,4})?(${kwPattern})[^\\d]{0,3}(\\d+(?:\\.\\d+)?)`,"g");
   let m;
@@ -3102,22 +3105,14 @@ function parseRefundNote(note, total){
       const prefix=note.slice(Math.max(0,m.index-4), m.index);
       sign=prefix.includes("+")?"+":"-";
     }
-    if(sign==="+") hasPlus=true;
     if(label==="匯費"){
-      fee=amt;
+      fee=amt; // 匯費不算進電費淨額，只給房管年租那邊用
     }else{
-      otherSum+=(sign==="+"?amt:-amt);
-      otherItems.push({sign,label,amt});
+      signedSum+=(sign==="+"?amt:-amt);
     }
   }
 
-  if(hasPlus) return{ok:false, reason:"備註裡含加項（+xxx），需人工確認記帳方式", deposit, otherItems, fee};
-
-  const computedTotal=deposit+otherSum-fee;
-  if(Math.abs(computedTotal-total)>=0.5){
-    return{ok:false, reason:`押金反推金額(${computedTotal})跟總金額(${total})對不起來`, deposit, otherItems, fee, computedTotal};
-  }
-  return{ok:true, deposit, electricFee:-otherSum, fee, otherItems};
+  return{ok:true, deposit, electricFee:-signedSum, fee};
 }
 
 // 從備註抓「房源」部分（給 matchHousingFromDesc 用，也給摘要用），
@@ -3162,7 +3157,7 @@ function namesMatch(a,b){
   return smaller.every(tok=>larger.includes(tok));
 }
 
-function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
+function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef){
   const{note, total, dept, tenant, rocDateStr, rocYear}=row;
 
   // 商空案例：固定打法，不用解析備註細節。
@@ -3181,8 +3176,8 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
   }
 
   if(dept==="房管處"){
-    // 年租：維持既有押金退款打法（131450-01／1110-01，有匯費另加6270）
-    const parsed=parseRefundNote(note, total);
+    // 年租：維持既有押金退款打法（131450-01／1110-01，有匯費另加6270，方向已用真實資料驗證過）
+    const parsed=parseRefundNote(note);
     if(!parsed.ok){
       // 年租這邊即使解析不出電費細節，押金退款本身通常不需要，改直接用總金額原樣處理
       return{ok:true, lines:[
@@ -3203,8 +3198,8 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
     return{ok:false, reason:`退款部門「${dept}」不是房管處也不是短租處，需人工確認`};
   }
 
-  // 短租處：先解析備註
-  const parsed=parseRefundNote(note, total);
+  // 短租處：先解析備註，抓押金金額跟電費淨額（電費淨額已經把「+」加項一起加減進去了）
+  const parsed=parseRefundNote(note);
   if(!parsed.ok) return{ok:false, reason:parsed.reason};
 
   const houseText=extractRefundHouseText(note);
@@ -3221,14 +3216,25 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
     return{ok:false, reason:`房源「${houseLabel}」服務模式是「${houseMatch.service||"未設定"}」，不是包租-B也不是合作拆帳-HC，需人工確認`};
   }
 
+  const tenantCandidates=extractTenantCandidates(row, houseMatch);
+  const tenantLabel=tenantCandidates[0]||tenant||"";
+
+  // 1110-01的金額/摘要、要不要開6270，都改用「這筆對應到的金流表那一列」本身的支出/匯費/說明欄位，
+  // 不再用備註文字反推——金流表才是真正的出款記錄，備註只是輔助判斷押金/電費用的。
+  // 對不到金流表的話（沒上傳金流表、或真的找不到對應的那筆），才退回用「押金－電費」算出來的金額。
+  const cf=(row.cfIndex!=null && cashflowRowsRef && cashflowRowsRef[row.cfIndex])?cashflowRowsRef[row.cfIndex]:null;
+  const bankAmount=cf?cf.expense:(parsed.deposit-parsed.electricFee);
+  const bankFee=cf?(cf.fee||0):0;
+  const bankDesc=cf?cf.desc:note;
+
   const lines=[];
-  lines.push({acctCode:"2205-031", custCode:code, dc:1, amount:parsed.deposit, summary:note, liChongOverride:"Y"});
+  lines.push({acctCode:"2205-031", custCode:code, dc:1, amount:parsed.deposit, summary:`${houseLabel}-押金-${tenantLabel}`, liChongOverride:"Y"});
 
   // 只有真的有電費才產生電費相關的分錄，避免出現金額是0的空分錄
   if(parsed.electricFee>0){
     if(isPartner&&hasDaishou){
       // 合作拆帳：電費不拆稅，走代收款，不需要發票
-      lines.push({acctCode:"2205-01", custCode:code, dc:2, amount:parsed.electricFee, summary:note, liChongOverride:"Y"});
+      lines.push({acctCode:"2205-01", custCode:code, dc:2, amount:parsed.electricFee, summary:`${houseLabel}-退押金代收電費-${tenantLabel}`, liChongOverride:"Y"});
     }else{
       // 包租：電費要記銷項稅額(2290)，這筆稅額要有實際開立的電子發票才能記帳，
       // 所以要用金額去比對電子發票清單，找不到對應發票就不產生分錄、標記人工處理，
@@ -3239,7 +3245,6 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
       // 找候選發票：核對「客戶名稱＝退款單的承租人（戶名/廠商名稱，或從備註解析出來的姓名）」
       // ＋「總金額＝備註解析出的電費」，兩者都相符才算數。
       // 姓名比對用詞彙化模糊比對，不要求完全一模一樣的整串文字、也不要求順序相同。
-      const tenantCandidates=extractTenantCandidates(row, houseMatch);
       let invIdx=-1, invAmountOnlyMatch=false;
       for(let i=0;i<invoices.length;i++){
         if(usedInvoiceIdx.has(i)) continue;
@@ -3257,18 +3262,26 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx){
       }
       usedInvoiceIdx.add(invIdx);
       const inv=invoices[invIdx];
-      const noteWithInv=`${note}-${String(inv.invoiceNo||"").replace(/-/g,"")}`;
-      lines.push({acctCode:"4101-04", custCode:code, dc:2, amount:Math.round(inv.untaxed), summary:noteWithInv, deptNo:"001", liChongOverride:"N"});
-      lines.push({acctCode:"2290", custCode:code, dc:2, amount:Math.round(inv.tax), summary:noteWithInv, liChongOverride:"N"});
+      const invNo=String(inv.invoiceNo||"").replace(/-/g,"");
+      lines.push({acctCode:"4101-04", custCode:code, dc:2, amount:Math.round(inv.untaxed), summary:`${tenantLabel}-電費`, deptNo:"001", liChongOverride:"N"});
+      lines.push({acctCode:"2290", custCode:code, dc:2, amount:Math.round(inv.tax), summary:`${tenantLabel}-電費-${invNo}`, liChongOverride:"N"});
     }
   }
 
-  lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:total, summary:note, liChongOverride:"N"});
-  // 短租這邊的匯費是從要退給房客的錢裡面扣掉的（房客實際拿到的錢變少），
-  // 不是公司額外多付（這點跟年租的退押金方向相反，年租是公司多付匯費），
-  // 所以匯費要記在貸方，這樣借貸才會平衡：
-  // 借方(2205-031)＝完整押金；貸方＝電費相關＋實際出款金額(1110-01)＋匯費，兩邊才會兜得起來。
-  if(parsed.fee>0) lines.push({acctCode:"6270", custCode:code, dc:2, amount:parsed.fee, summary:note, liChongOverride:"N"});
+  lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:bankAmount, summary:bankDesc, liChongOverride:"N"});
+  // 這筆對應到的金流表那一列，如果「匯費」欄位本身有填值，才另開一行6270（金額直接用金流表上的匯費欄位）；
+  // 沒對到金流表、或金流表匯費欄位是空的，就不開這一行。方向是貸方（短租的匯費是從要退給房客的錢裡面扣掉，
+  // 不是公司額外多付，這點跟房管年租的退押金方向相反）。
+  if(bankFee>0) lines.push({acctCode:"6270", custCode:code, dc:2, amount:bankFee, summary:bankDesc, liChongOverride:"N"});
+
+  // 最後一道防線：借貸平衡檢查。備註文字千奇百怪，難免會有清單裡沒收錄的關鍵字（例如「退還租金」「租金」
+  // 這種沒有明確加減號、或關鍵字沒列進去的項目），與其一直擴充關鍵字清單去猜，不如直接驗算借貸平不平衡——
+  // 不平衡就代表備註裡有東西沒解析到，不自動產生分錄，交給人工確認，避免生出金額算錯的傳票。
+  const debitSum=lines.filter(l=>l.dc===1).reduce((s,l)=>s+l.amount,0);
+  const creditSum=lines.filter(l=>l.dc===2).reduce((s,l)=>s+l.amount,0);
+  if(Math.abs(debitSum-creditSum)>=0.5){
+    return{ok:false, reason:`借貸不平衡（借方${fmtMoney(debitSum)}／貸方${fmtMoney(creditSum)}），備註裡可能有沒解析到的加項或扣項，需人工確認`};
+  }
 
   return{ok:true, lines};
 }
@@ -3393,7 +3406,7 @@ function fangRefundRebuild(){
   fangRefundState.rows=ordered;
   fangRefundState.unmatchedCfRows=unmatchedCfRows;
   const usedInvoiceIdx=new Set(); // 每次重新計算都要歸零，避免累積上次殘留的使用紀錄
-  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row, fangRefundState.invoices, usedInvoiceIdx)}));
+  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row, fangRefundState.invoices, usedInvoiceIdx, fangRefundState.cashflowRows)}));
   // 上傳的電子發票裡，沒有被任何退款項目用到的——可能開錯發票、或退款單漏傳，提醒人工看一下
   fangRefundState.unusedInvoices=(fangRefundState.invoices||[]).filter((inv,i)=>!usedInvoiceIdx.has(i));
   renderRefundResult();

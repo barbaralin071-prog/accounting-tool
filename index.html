@@ -613,8 +613,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
       上傳「房管屋主出款」代管報表 Excel（房源、每個房客租金、代收押金、代付、業績(系統服務費含稅)、
-      代管(代管費含稅)、付款），再上傳對應的電子發票檔案，工具會用電子發票的「發票備註」欄位
-      （格式：年月/房源名稱+費用類型/未稅/稅額）自動比對出正確的未稅、稅額跟發票號碼。
+      代管(代管費含稅)、房東服務費含稅、修繕費含稅、付款，後兩欄選填），再上傳對應的電子發票檔案，
+      工具會用電子發票的「發票備註」欄位（格式：年月/房源名稱+費用類型/未稅/稅額）自動比對出正確的未稅、稅額跟發票號碼。
       找不到對應發票的，改用自算5%營業稅公式當暫時值並標記「⚠需查核」，還是會產生分錄放進傳票裡。
       另外要上傳對應的支出金流表：傳票的順序、出款日期都會照金流表為主；
       匯款手續費也不是固定金額，是看金流表上那一筆有沒有填「匯費」欄位，有才會產生6270這一行。
@@ -3678,21 +3678,44 @@ document.getElementById("fang-refund-btn-voucher").addEventListener("click",()=>
 
 // 解析電子發票「發票備註」欄位，格式大致是「年月/房源名稱+費用類型/未稅/稅額」
 // （中間的空白、有無空格都要容忍），抓出年月、房源名稱、費用類型(mgmt=代管費／system=系統服務費)。
+// 判斷發票備註裡的費用類型關鍵字
+function detectOwnerFeeType(s){
+  if(!s) return null;
+  if(s.includes("系統費")||s.includes("管理服務費")) return "system";
+  if(s.includes("修繕費")) return "repair";
+  if(s.includes("代管費")) return "mgmt";
+  if(s.includes("服務費")) return "landlord"; // 排除掉上面已處理的系統費，剩下的服務費是房東服務費
+  return null;
+}
+
 function parseInvoiceRefNote(remark){
   if(!remark) return null;
   const parts=String(remark).split("/").map(s=>s.trim()).filter(s=>s!=="");
   if(parts.length<4) return null;
-  const[ym, houseAndType, untaxedStr, taxStr]=parts;
-  let type=null, houseName=houseAndType;
-  if(houseAndType.includes("系統費")||houseAndType.includes("管理服務費")){
-    type="system";
-    houseName=houseAndType.replace(/管理服務費\(系統費\)/,"").replace(/系統費/,"").trim();
-  }else if(houseAndType.includes("代管費")){
-    type="mgmt";
-    houseName=houseAndType.replace(/代管費/,"").trim();
+  const[p0, p1, untaxedStr, taxStr]=parts;
+
+  // 備註格式有兩種順序，都要能辨識：
+  //   「年月 / 房源名稱+費用類型 / 未稅 / 稅額」（代管費/系統費常見的順序）
+  //   「房源名稱 / 年月+費用類型(黏在一起沒分隔) / 未稅 / 稅額」（服務費看到的是這種順序）
+  let ym=null, houseName=null, type=null;
+  const p0IsYm=/^\d{5}$/.test(p0);
+  if(p0IsYm){
+    ym=p0;
+    type=detectOwnerFeeType(p1);
+    if(type){
+      houseName=p1.replace(/管理服務費\(系統費\)/,"").replace(/系統服務費/,"").replace(/系統費/,"")
+        .replace(/修繕費/,"").replace(/代管費/,"").replace(/服務費/,"").trim();
+    }
   }else{
-    return null;
+    const ymInP1=p1.match(/(\d{5})/);
+    if(ymInP1){
+      ym=ymInP1[1];
+      type=detectOwnerFeeType(p1);
+      houseName=p0;
+    }
   }
+
+  if(!ym||!type||!houseName) return null;
   const untaxed=parseFloat(untaxedStr), tax=parseFloat(taxStr);
   if(isNaN(untaxed)||isNaN(tax)) return null;
   return{ym, houseName, type, untaxed, tax};
@@ -3761,6 +3784,8 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
 
   pushFeeLines(group.systemFeeGross, "system", "4101-024", "系統服務費");
   pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
+  pushFeeLines(group.landlordFeeGross, "landlord", "4101-022", "服務費");
+  pushFeeLines(group.repairFeeGross, "repair", "4101-023", "修繕費");
 
   if(group.advance>0){
     lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:group.advance, summary:""});
@@ -3825,6 +3850,9 @@ function parseOwnerPayoutXlsx(data){
         advance:Number(r[col("代付")])||0,
         systemFeeGross:Number(r[col("業績(系統服務費含稅)")])||0,
         mgmtFeeGross:Number(r[col("代管(代管費含稅)")])||0,
+        // 這兩欄是選填的，Excel裡沒有這兩個欄位也不會出錯(找不到欄位col()回傳-1，r[-1]是undefined，Number(undefined)=NaN，||0會接住)
+        landlordFeeGross:Number(r[col("房東服務費含稅")])||0,
+        repairFeeGross:Number(r[col("修繕費含稅")])||0,
         payment:Number(r[col("付款")])||0,
       });
     }

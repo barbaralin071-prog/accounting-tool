@@ -3838,6 +3838,13 @@ function parseOwnerPayoutXlsx(data){
   const col=n=>headers.indexOf(n);
   const rows=aoa.slice(hi+1).filter(r=>r[col("房源名稱")]);
 
+  // 空白欄位一律當作「這一列沒有這個資料」，不是0。
+  // 房源層級的欄位（代收押金/代付/業績/代管/房東服務費/修繕費）容許分散填在同一個房源的好幾列裡（例如
+  // 這個房源代付有3筆各自不同金額、但只有2個房客，第3列房客租金就會是空白），這些欄位會把所有非空白的值加總；
+  // 「付款」不是累加項目，取最後一個有填的值就好。
+  // 房客租金欄位是空白的那一列，不會被當成一個「金額是0的房客」塞進傳票——只有真的有填數字的列才算一個房客。
+  const numOrNull=v=>(v==null||v==="")?null:(Number(v)||0);
+
   const groups=new Map();
   rows.forEach(r=>{
     const ym=String(r[col("年月")]||"").trim();
@@ -3846,21 +3853,27 @@ function parseOwnerPayoutXlsx(data){
     if(!groups.has(key)){
       groups.set(key,{
         ym, houseName, tenants:[],
-        deposit:Number(r[col("代收押金")])||0,
-        advance:Number(r[col("代付")])||0,
-        systemFeeGross:Number(r[col("業績(系統服務費含稅)")])||0,
-        mgmtFeeGross:Number(r[col("代管(代管費含稅)")])||0,
-        // 這兩欄是選填的，Excel裡沒有這兩個欄位也不會出錯(找不到欄位col()回傳-1，r[-1]是undefined，Number(undefined)=NaN，||0會接住)
-        landlordFeeGross:Number(r[col("房東服務費含稅")])||0,
-        repairFeeGross:Number(r[col("修繕費含稅")])||0,
-        payment:Number(r[col("付款")])||0,
+        deposit:0, advance:0, systemFeeGross:0, mgmtFeeGross:0,
+        landlordFeeGross:0, repairFeeGross:0, payment:0,
       });
     }
-    groups.get(key).tenants.push({
-      label:String(r[col("房客摘要")]||"").trim(),
-      name:String(r[col("房客姓名")]||"").trim(),
-      rent:Number(r[col("房客租金")])||0,
-    });
+    const g=groups.get(key);
+    const depositVal=numOrNull(r[col("代收押金")]); if(depositVal!=null) g.deposit+=depositVal;
+    const advanceVal=numOrNull(r[col("代付")]); if(advanceVal!=null) g.advance+=advanceVal;
+    const sysVal=numOrNull(r[col("業績(系統服務費含稅)")]); if(sysVal!=null) g.systemFeeGross+=sysVal;
+    const mgmtVal=numOrNull(r[col("代管(代管費含稅)")]); if(mgmtVal!=null) g.mgmtFeeGross+=mgmtVal;
+    const landlordVal=numOrNull(r[col("房東服務費含稅")]); if(landlordVal!=null) g.landlordFeeGross+=landlordVal;
+    const repairVal=numOrNull(r[col("修繕費含稅")]); if(repairVal!=null) g.repairFeeGross+=repairVal;
+    const paymentVal=numOrNull(r[col("付款")]); if(paymentVal!=null) g.payment=paymentVal;
+
+    const rentVal=numOrNull(r[col("房客租金")]);
+    if(rentVal!=null){
+      g.tenants.push({
+        label:String(r[col("房客摘要")]||"").trim(),
+        name:String(r[col("房客姓名")]||"").trim(),
+        rent:rentVal,
+      });
+    }
   });
   return[...groups.values()];
 }

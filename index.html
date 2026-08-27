@@ -606,6 +606,63 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
+  <!-- ── 房管屋主出款（依代管報表Excel + 電子發票）── -->
+  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      🏘️ 房管屋主出款
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      上傳「房管屋主出款」代管報表 Excel（房源、每個房客租金、代收押金、代付、業績(系統服務費含稅)、
+      代管(代管費含稅)、付款），再上傳對應的電子發票檔案，工具會用電子發票的「發票備註」欄位
+      （格式：年月/房源名稱+費用類型/未稅/稅額）自動比對出正確的未稅、稅額跟發票號碼。
+      找不到對應發票的，改用自算5%營業稅公式當暫時值並標記「⚠需查核」，還是會產生分錄放進傳票裡。
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div class="dropzone" id="fang-owner-dz-file" style="max-width:320px;">
+            <div class="dz-icon">📋</div>
+            <div class="dz-label">上傳房管屋主出款 Excel</div>
+            <div class="dz-hint">房管屋主出款.xlsx</div>
+          </div>
+          <input type="file" id="fang-owner-file" accept=".xlsx" hidden>
+        </div>
+        <div>
+          <div class="dropzone" id="fang-owner-dz-invoice" style="max-width:320px;">
+            <div class="dz-icon">🧾</div>
+            <div class="dz-label">上傳電子發票</div>
+            <div class="dz-hint">電子發票開立.xlsx</div>
+          </div>
+          <input type="file" id="fang-owner-file-invoice" accept=".xlsx" hidden>
+        </div>
+      </div>
+      <div class="errbox" id="fang-owner-err"></div>
+      <div id="fang-owner-result" style="display:none;margin-top:14px;">
+        <div class="match-summary" style="grid-template-columns:repeat(2,1fr);">
+          <div class="ms-cell ok">
+            <div class="ms-num" id="fang-owner-cnt-ok">0</div>
+            <div class="ms-lbl">✓ 可自動產生分錄</div>
+          </div>
+          <div class="ms-cell warn">
+            <div class="ms-num" id="fang-owner-cnt-review">0</div>
+            <div class="ms-lbl">🔎 已產生但需查核</div>
+          </div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:10px;">
+          <table>
+            <thead><tr>
+              <th>#</th><th>年月</th><th>房源名稱</th><th class="right">房客租金合計</th><th class="right">匯給屋主</th><th>狀態</th>
+            </tr></thead>
+            <tbody id="fang-owner-tb"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+          <button class="btn primary" id="fang-owner-btn-voucher">下載房管屋主出款傳票</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── 出款後開立電子發票 ── -->
   <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
@@ -3583,7 +3640,266 @@ document.getElementById("fang-refund-btn-voucher").addEventListener("click",()=>
   clearErr("fang-refund-err");
 });
 
-// 從說明判斷支出傳票科目
+/* ══════════════════════════════════════
+   房管屋主出款（依代管報表 Excel + 電子發票，產生每個房源的屋主出款傳票）
+   ── 規則說明（已用真實傳票對照驗證）──
+
+   輸入資料：一份「房管屋主出款」Excel，每個房源一到多列（一個房客一列），欄位：
+   年月／房源名稱／房客摘要（樓層或房號）／房客姓名／房客租金／代收押金／代付／
+   業績(系統服務費含稅)／代管(代管費含稅)／付款
+
+   借方：
+     2205-02  每個房客各自一列（房源-房客摘要-年月租金-房客姓名）
+     6270     借1  匯款手續費（固定15，公司多付的匯款成本，方向跟短租退押金相反）
+     2205-03  借1  代收押金（如果這個房源這期有收押金的話）
+
+   貸方：
+     4101-024＋2290  系統服務費未稅／稅額（業績欄位含稅總額，比對電子發票「發票備註」拆出來，
+                      發票備註格式是「年月/房源名稱系統費/未稅/稅額」）
+     4101-02＋2290   代管費未稅／稅額（代管欄位含稅總額，比對電子發票「發票備註」拆出來，
+                      發票備註格式是「年月/房源名稱代管費/未稅/稅額」）
+     131450-01       代付欄位金額，長摘要留空（文中匯入後由會計手動選沖帳對象）
+     1110-01         剩下的差額（借方合計－以上貸方已知項目），摘要用「房源-年月租金-屋主姓名」，
+                      屋主姓名取自代管費那張發票的客戶名稱欄位（代管費發票的客戶名稱就是屋主本人）
+
+   找不到對應發票的業績/代管費，改用自算5%營業稅公式當暫時值，摘要標記「⚠需查核」，
+   一樣正常產生分錄（不擋下來），跟短租退款那邊「盡量產生、標記查核」的原則一致。
+══════════════════════════════════════ */
+
+// 解析電子發票「發票備註」欄位，格式大致是「年月/房源名稱+費用類型/未稅/稅額」
+// （中間的空白、有無空格都要容忍），抓出年月、房源名稱、費用類型(mgmt=代管費／system=系統服務費)。
+function parseInvoiceRefNote(remark){
+  if(!remark) return null;
+  const parts=String(remark).split("/").map(s=>s.trim()).filter(s=>s!=="");
+  if(parts.length<4) return null;
+  const[ym, houseAndType, untaxedStr, taxStr]=parts;
+  let type=null, houseName=houseAndType;
+  if(houseAndType.includes("系統費")||houseAndType.includes("管理服務費")){
+    type="system";
+    houseName=houseAndType.replace(/管理服務費\(系統費\)/,"").replace(/系統費/,"").trim();
+  }else if(houseAndType.includes("代管費")){
+    type="mgmt";
+    houseName=houseAndType.replace(/代管費/,"").trim();
+  }else{
+    return null;
+  }
+  const untaxed=parseFloat(untaxedStr), tax=parseFloat(taxStr);
+  if(isNaN(untaxed)||isNaN(tax)) return null;
+  return{ym, houseName, type, untaxed, tax};
+}
+
+// 用「年月＋房源名稱＋費用類型」去找電子發票裡對應的那一張
+function findOwnerFeeInvoices(invoices, ym, houseName, type){
+  if(!invoices) return [];
+  return invoices.filter(inv=>{
+    const ref=inv._ownerRef;
+    if(!ref) return false;
+    return ref.ym===ym && ref.type===type && (ref.houseName===houseName||ref.houseName.startsWith(houseName)||houseName.startsWith(ref.houseName));
+  });
+}
+
+const FANG_OWNER_WIRE_FEE=15; // 匯款手續費，目前是固定值，跟已驗證過的真實傳票一致
+
+function buildOwnerPayoutVoucherLines(group, invoices){
+  const houseMatch=matchHousingFromDesc(group.houseName);
+  const code=houseMatch?houseMatch.code:"";
+  const houseLabel=houseMatch?houseMatch.matchedName:group.houseName;
+  const ym=group.ym;
+  const needsReviewReasons=[];
+
+  const lines=[];
+  let rentTotal=0;
+  group.tenants.forEach(t=>{
+    lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}-${t.label}-${ym}租金-${t.name}`});
+    rentTotal+=t.rent;
+  });
+  lines.push({acctCode:"6270", custCode:"", dc:1, amount:FANG_OWNER_WIRE_FEE, summary:"匯款手續費"});
+  if(group.deposit>0){
+    lines.push({acctCode:"2205-03", custCode:code, dc:1, amount:group.deposit, summary:`${houseLabel}-${ym}押金`});
+  }
+
+  let creditKnownSum=0;
+  let landlordName="";
+
+  // 代管費通常是一張發票；系統服務費可能是好幾個房客各自開一張小發票——
+  // 不管是哪種情況都用同一套邏輯處理：找到「這個房源這個年月這個費用類型」的所有發票，
+  // 未稅加總成一行(4101-02或4101-024)，但每一張發票各自產生一行銷項稅額(2290)、帶各自的發票號碼，
+  // 這樣不管是1張還是好幾張發票都能正確處理，金額也不會漏算。
+  function pushFeeLines(grossAmount, type, acctCode, labelZh){
+    if(grossAmount<=0) return;
+    const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, type);
+    if(invs.length){
+      let untaxedSum=0;
+      invs.forEach(inv=>{
+        const untaxedAmt=Math.round(inv._ownerRef.untaxed);
+        const taxAmt=Math.round(inv._ownerRef.tax);
+        const invNo=String(inv.invoiceNo||"").replace(/-/g,"");
+        lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`});
+        untaxedSum+=untaxedAmt;
+        creditKnownSum+=taxAmt;
+        if(type==="mgmt"&&inv.buyerName) landlordName=inv.buyerName;
+      });
+      lines.push({acctCode, custCode:code, dc:2, amount:untaxedSum, summary:`${houseLabel}-${ym}${labelZh}`});
+      creditKnownSum+=untaxedSum;
+    }else{
+      needsReviewReasons.push(`${labelZh}在電子發票裡找不到對應的「發票備註」（年月${ym}／房源${group.houseName}），金額暫用自算5%營業稅公式，請人工核對發票`);
+      const untaxedAmt=Math.round(grossAmount/1.05);
+      const taxAmt=grossAmount-untaxedAmt;
+      lines.push({acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
+      lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
+      creditKnownSum+=untaxedAmt+taxAmt;
+    }
+  }
+
+  pushFeeLines(group.systemFeeGross, "system", "4101-024", "系統服務費");
+  pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
+
+  if(group.advance>0){
+    lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:group.advance, summary:""});
+    creditKnownSum+=group.advance;
+  }
+
+  const debitTotal=rentTotal+FANG_OWNER_WIRE_FEE+group.deposit;
+  const remainAmount=debitTotal-creditKnownSum;
+  const tenantOrLandlord=landlordName||group.tenants[group.tenants.length-1]?.name||"";
+  lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:remainAmount, summary:`${houseLabel}-${ym}租金-屋主${tenantOrLandlord}`});
+
+  if(remainAmount<0){
+    needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);
+  }
+
+  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；")};
+}
+
+// 解析「房管屋主出款」Excel（欄位：年月／房源名稱／房客摘要／房客姓名／房客租金／代收押金／代付／
+// 業績(系統服務費含稅)／代管(代管費含稅)／付款），依「年月+房源名稱」分組成每個房源一組
+function parseOwnerPayoutXlsx(data){
+  const wb=XLSX.read(data,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const hi=aoa.findIndex(r=>r&&r.some(c=>c==="房源名稱"));
+  if(hi===-1) throw new Error("找不到「房源名稱」欄位，請確認是房管屋主出款的格式");
+  const headers=aoa[hi];
+  const col=n=>headers.indexOf(n);
+  const rows=aoa.slice(hi+1).filter(r=>r[col("房源名稱")]);
+
+  const groups=new Map();
+  rows.forEach(r=>{
+    const ym=String(r[col("年月")]||"").trim();
+    const houseName=String(r[col("房源名稱")]||"").trim();
+    const key=`${ym}|${houseName}`;
+    if(!groups.has(key)){
+      groups.set(key,{
+        ym, houseName, tenants:[],
+        deposit:Number(r[col("代收押金")])||0,
+        advance:Number(r[col("代付")])||0,
+        systemFeeGross:Number(r[col("業績(系統服務費含稅)")])||0,
+        mgmtFeeGross:Number(r[col("代管(代管費含稅)")])||0,
+        payment:Number(r[col("付款")])||0,
+      });
+    }
+    groups.get(key).tenants.push({
+      label:String(r[col("房客摘要")]||"").trim(),
+      name:String(r[col("房客姓名")]||"").trim(),
+      rent:Number(r[col("房客租金")])||0,
+    });
+  });
+  return[...groups.values()];
+}
+
+let fangOwnerPayoutState={groups:[], invoices:null, results:[]};
+
+function fangOwnerPayoutRebuild(){
+  if(!fangOwnerPayoutState.groups.length) return;
+  fangOwnerPayoutState.results=fangOwnerPayoutState.groups.map(group=>({
+    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices)
+  }));
+  renderOwnerPayoutResult();
+}
+
+bindDropzone("fang-owner-dz-file","fang-owner-file",async(file,dz)=>{
+  clearErr("fang-owner-err");
+  try{
+    const data=await readFile(file);
+    fangOwnerPayoutState.groups=parseOwnerPayoutXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${fangOwnerPayoutState.groups.length}個房源）`;
+    fangOwnerPayoutRebuild();
+  }catch(e){
+    showErr("fang-owner-err", e.message);
+  }
+});
+
+bindDropzone("fang-owner-dz-invoice","fang-owner-file-invoice",async(file,dz)=>{
+  clearErr("fang-owner-err");
+  try{
+    const data=await readFile(file);
+    const invoices=parseBizInvoiceXlsx(data);
+    // 解析「發票備註」，只有能正確解析出「年月/房源/費用類型」格式的才會被拿來比對代管費/系統服務費
+    invoices.forEach(inv=>{ inv._ownerRef=parseInvoiceRefNote(inv.rawNote); });
+    fangOwnerPayoutState.invoices=invoices;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${invoices.length}筆）`;
+    fangOwnerPayoutRebuild();
+  }catch(e){
+    showErr("fang-owner-err", e.message);
+  }
+});
+
+function renderOwnerPayoutResult(){
+  const results=fangOwnerPayoutState.results;
+  document.getElementById("fang-owner-result").style.display=results.length?"block":"none";
+  const okList=results.filter(r=>!r.result.needsReview);
+  const reviewList=results.filter(r=>r.result.needsReview);
+  document.getElementById("fang-owner-cnt-ok").textContent=okList.length;
+  document.getElementById("fang-owner-cnt-review").textContent=reviewList.length;
+
+  const tb=document.getElementById("fang-owner-tb");
+  tb.innerHTML="";
+  results.forEach((item,i)=>{
+    const{group,result}=item;
+    const rentTotal=group.tenants.reduce((s,t)=>s+t.rent,0);
+    const payoutLine=result.lines.find(l=>l.acctCode==="1110-01");
+    const statusTag=result.needsReview
+      ?`<span class="tag warn">🔎 已產生-需查核</span><br><span style="font-size:10.5px;color:#c0392b;">${result.reviewReason}</span>`
+      :'<span class="tag ok">✓ 可自動產生</span>';
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${i+1}</td>
+      <td>${group.ym}</td>
+      <td>${group.houseName}</td>
+      <td class="mono right">${fmtMoney(rentTotal)}</td>
+      <td class="mono right">${payoutLine?fmtMoney(payoutLine.amount):"—"}</td>
+      <td style="max-width:320px;white-space:normal;">${statusTag}</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
+  const results=fangOwnerPayoutState.results;
+  if(!results.length){
+    showErr("fang-owner-err","目前沒有可以產生分錄的房源資料");
+    return;
+  }
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
+  const rows=[HEADERS];
+  results.forEach(({group,result})=>{
+    const rocYear=group.ym?parseInt(group.ym.slice(0,3))||115:115;
+    const dateStr=TODAY_ROC; // 房管屋主出款固定每月1號出款(跟社宅那邊邏輯一致)，先用今天日期，之後可依實際出款日調整
+    result.lines.forEach(line=>{
+      rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+    });
+  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+  XLSX.writeFile(wb, `房管屋主出款_${new Date().toISOString().slice(0,10)}.xlsx`);
+  clearErr("fang-owner-err");
+});
+
+
 function buildExpenseVoucherLines(row){
   const desc=row.desc;
   const amt=row.expense;
@@ -4826,6 +5142,7 @@ function parseBizInvoiceXlsx(data){
       tax:Math.round(Number(r[colTax])||0),
       total:Number(r[colTotal])||0,
       rocDateStr, rocYear,
+      rawNote:colNote>=0?String(r[colNote]||"").trim():"",
     };
   });
 }

@@ -3796,7 +3796,7 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   const baseRemain=(rentTotal+group.deposit)-creditKnownSum;
 
   // 跟金流表比對：找「房源名稱有出現在說明裡、金額對得上baseRemain」的那一列，
-  // 抓它的日期（傳票日期用這個，不是今天）跟匯費欄位（有值才開6270，金額直接用金流表上的匯費，不是寫死的）。
+  // 抓它的匯費欄位（有值才開6270，金額直接用金流表上的匯費，不是寫死的），也用來排序。
   let cf=null, cfIndex=null;
   if(cashflowRows&&cashflowRows.length){
     for(let i=0;i<cashflowRows.length;i++){
@@ -3817,13 +3817,19 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:remainAmount, summary:`${houseLabel}-${ym}租金-屋主${tenantOrLandlord}`});
 
   if(!cf&&cashflowRows&&cashflowRows.length){
-    needsReviewReasons.push(`這個房源在金流表裡找不到對應的那一筆（房源名稱＋金額${fmtMoney(baseRemain)}對不起來），出款日期用今天代替，也沒有加匯費，請人工確認`);
+    needsReviewReasons.push(`這個房源在金流表裡找不到金額剛好對得上的那一筆（房源名稱＋金額${fmtMoney(baseRemain)}對不起來），出款日期還是會用這批金流表統一的出款日期，但沒有加匯費，也沒辦法排進正確的順序位置，請人工確認金額`);
   }
   if(remainAmount<0){
     needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);
   }
 
-  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；"), cfIndex, rocDateStr:cf?cf.rocDateStr:null};
+  // 出款日期一律用「這批金流表統一的出款日期」，不管這個房源有沒有精準比對到金額——
+  // 因為房管屋主出款本來就是同一天集中出款，金流表裡也只會有一個日期，
+  // 沒有理由讓「需要人工查核」的房源用今天的日期、其他房源用金流表日期，兩者應該要一致。
+  const batchDateStr=(cashflowRows&&cashflowRows._ownerBatchDate)?cashflowRows._ownerBatchDate:null;
+  const rocDateStr=batchDateStr||(cf?cf.rocDateStr:null);
+
+  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；"), cfIndex, rocDateStr};
 }
 
 // 解析「房管屋主出款」Excel（欄位：年月／房源名稱／房客摘要／房客姓名／房客租金／代收押金／代付／
@@ -3882,10 +3888,24 @@ let fangOwnerPayoutState={groups:[], invoices:null, cashflowRows:null, results:[
 
 function fangOwnerPayoutRebuild(){
   if(!fangOwnerPayoutState.groups.length) return;
-  // 重算前先把金流表每一列的「已配對」標記清掉，避免上次配對結果卡住
-  (fangOwnerPayoutState.cashflowRows||[]).forEach(c=>{ delete c._ownerUsed; });
+  const cashflowRows=fangOwnerPayoutState.cashflowRows;
+  if(cashflowRows&&cashflowRows.length){
+    // 重算前先把金流表每一列的「已配對」標記清掉，避免上次配對結果卡住
+    cashflowRows.forEach(c=>{ delete c._ownerUsed; });
+    // 算出這批金流表的「統一出款日期」：房管屋主出款本來就是同一天集中出款，
+    // 取出現次數最多的日期當作整批的統一日期（多數情況下金流表裡本來就只會有單一日期，
+    // 這樣算是為了保險，萬一混進極少數其他日期的雜訊列也不會被誤導）。
+    const dateCounts=new Map();
+    cashflowRows.forEach(c=>{
+      if(!c.rocDateStr) return;
+      dateCounts.set(c.rocDateStr, (dateCounts.get(c.rocDateStr)||0)+1);
+    });
+    let batchDate=null, maxCount=0;
+    dateCounts.forEach((count,date)=>{ if(count>maxCount){ maxCount=count; batchDate=date; } });
+    cashflowRows._ownerBatchDate=batchDate;
+  }
   fangOwnerPayoutState.results=fangOwnerPayoutState.groups.map(group=>({
-    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices, fangOwnerPayoutState.cashflowRows)
+    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices, cashflowRows)
   }));
   renderOwnerPayoutResult();
 }
@@ -3986,27 +4006,23 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
     showErr("fang-owner-err","目前沒有可以產生分錄的房源資料");
     return;
   }
+  // 房管屋主出款本來就是同一天集中出款，傳票只會有一個檔案，不像其他分頁要照日期拆成好幾份；
+  // 順序照金流表排（cfIndex），對不到金流表的排最後、但一樣用同一批的統一出款日期。
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  // 依日期分組，組內維持前面已經排好的金流表順序（Map會保留insertion順序）；
-  // 對不到金流表的沒有日期，歸到「未對到」這一組，用今天的日期輸出。
-  const byDate=new Map();
+  const rows=[HEADERS];
   results.forEach(({group,result})=>{
     const dateStr=result.rocDateStr||TODAY_ROC;
     const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
-    if(!byDate.has(dateStr)) byDate.set(dateStr,[]);
     result.lines.forEach(line=>{
-      byDate.get(dateStr).push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+      rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
     });
   });
 
-  [...byDate.keys()].sort().forEach(dateStr=>{
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-    const dateSafe=String(dateStr).replace(/\//g,"-");
-    XLSX.writeFile(wb, `房管屋主出款_${dateSafe}.xlsx`);
-  });
+  const ws=XLSX.utils.aoa_to_sheet(rows);
+  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+  XLSX.writeFile(wb, `房管屋主出款_${new Date().toISOString().slice(0,10)}.xlsx`);
 
   clearErr("fang-owner-err");
 });

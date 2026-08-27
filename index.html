@@ -3752,13 +3752,11 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   let creditKnownSum=0;
   let landlordName="";
 
-  // 代管費通常是一張發票；系統服務費可能是好幾個房客各自開一張小發票——
-  // 不管是哪種情況都用同一套邏輯處理：找到「這個房源這個年月這個費用類型」的所有發票，
-  // 未稅加總成一行(4101-02或4101-024)，但每一張發票各自產生一行銷項稅額(2290)、帶各自的發票號碼，
-  // 這樣不管是1張還是好幾張發票都能正確處理，金額也不會漏算。
-  function pushFeeLines(grossAmount, type, acctCode, labelZh){
-    if(grossAmount<=0) return;
+  // 代管費是每個房源都一定會有的固定科目，獨立處理。
+  function pushFeeLines(grossAmount, type, acctCode, labelZh, tagOverride){
+    if(grossAmount<=0) return 0;
     const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, type);
+    let accounted=0;
     if(invs.length){
       let untaxedSum=0;
       invs.forEach(inv=>{
@@ -3768,24 +3766,40 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
         lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`});
         untaxedSum+=untaxedAmt;
         creditKnownSum+=taxAmt;
+        accounted+=untaxedAmt+taxAmt;
         if(type==="mgmt"&&inv.buyerName) landlordName=inv.buyerName;
       });
       lines.push({acctCode, custCode:code, dc:2, amount:untaxedSum, summary:`${houseLabel}-${ym}${labelZh}`});
       creditKnownSum+=untaxedSum;
-    }else{
+    }else if(tagOverride!=="skipFallback"){
       needsReviewReasons.push(`${labelZh}在電子發票裡找不到對應的「發票備註」（年月${ym}／房源${group.houseName}），金額暫用自算5%營業稅公式，請人工核對發票`);
       const untaxedAmt=Math.round(grossAmount/1.05);
       const taxAmt=grossAmount-untaxedAmt;
       lines.push({acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
       lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
       creditKnownSum+=untaxedAmt+taxAmt;
+      accounted=grossAmount;
     }
+    return accounted;
   }
 
-  pushFeeLines(group.systemFeeGross, "system", "4101-024", "系統服務費");
   pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
-  pushFeeLines(group.landlordFeeGross, "landlord", "4101-022", "服務費");
-  pushFeeLines(group.repairFeeGross, "repair", "4101-023", "修繕費");
+
+  // 「業績」欄位實際上可能是系統服務費、房東服務費、或修繕費的其中一種（甚至同一個房源同時有好幾種），
+  // 不會事先知道是哪一種，所以把「業績＋房東服務費含稅＋修繕費含稅」這三個欄位的金額全部合併成一個池子，
+  // 再分別去查電子發票裡，這個房源這期到底實際開了哪些類型的發票（系統/房東/修繕，可能不只一種同時存在），
+  // 找到哪個類型就用哪個類型的科目、按發票上的實際數字產生分錄；三種類型都對應完之後，
+  // 如果金額還有剩（代表有部分是發票裡完全查不到對應類型的），才用「系統服務費」當預設科目、
+  // 自算5%營業稅公式處理剩下的部分，並標記需查核。
+  const miscFeeGrossTotal=group.systemFeeGross+group.landlordFeeGross+group.repairFeeGross;
+  let miscAccounted=0;
+  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "system", "4101-024", "系統服務費", "skipFallback");
+  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "landlord", "4101-022", "服務費", "skipFallback");
+  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "repair", "4101-023", "修繕費", "skipFallback");
+  const miscUnaccounted=miscFeeGrossTotal-miscAccounted;
+  if(miscUnaccounted>0.5){
+    pushFeeLines(miscUnaccounted, "__none__", "4101-024", "系統服務費(類型未確認)");
+  }
 
   if(group.advance>0){
     lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:group.advance, summary:""});

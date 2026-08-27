@@ -3845,11 +3845,20 @@ function parseOwnerPayoutXlsx(data){
   const rows=aoa.slice(hi+1).filter(r=>r[col("房源名稱")]);
 
   // 空白欄位一律當作「這一列沒有這個資料」，不是0。
-  // 房源層級的欄位（代收押金/代付/業績/代管/房東服務費/修繕費）容許分散填在同一個房源的好幾列裡（例如
-  // 這個房源代付有3筆各自不同金額、但只有2個房客，第3列房客租金就會是空白），這些欄位會把所有非空白的值加總；
-  // 「付款」不是累加項目，取最後一個有填的值就好。
   // 房客租金欄位是空白的那一列，不會被當成一個「金額是0的房客」塞進傳票——只有真的有填數字的列才算一個房客。
   const numOrNull=v=>(v==null||v==="")?null:(Number(v)||0);
+
+  // 房源層級的欄位（代收押金/代付/業績/代管/房東服務費/修繕費）有兩種可能的填寫方式：
+  //   (a) 只填在其中一列，其他列留空 → 直接加總非空白值就是正確答案
+  //   (b) 每一列都重複填寫「同一個數字」（例如舊格式，房源總額重複貼在每個房客那一列）→ 這種情況
+  //       不能無腦加總（會把同一筆錢重複算好幾次），要先判斷「這個房源這個欄位的非空白值是不是全部長得一樣」，
+  //       是的話代表只是重複貼同一個數字，只算一次；如果非空白值裡有不一樣的數字，才代表真的是好幾筆不同金額要加總。
+  function smartSum(values){
+    if(!values.length) return 0;
+    const unique=[...new Set(values)];
+    if(unique.length===1) return unique[0];
+    return values.reduce((s,v)=>s+v,0);
+  }
 
   const groups=new Map();
   rows.forEach(r=>{
@@ -3857,31 +3866,36 @@ function parseOwnerPayoutXlsx(data){
     const houseName=String(r[col("房源名稱")]||"").trim();
     const key=`${ym}|${houseName}`;
     if(!groups.has(key)){
-      groups.set(key,{
-        ym, houseName, tenants:[],
-        deposit:0, advance:0, systemFeeGross:0, mgmtFeeGross:0,
-        landlordFeeGross:0, repairFeeGross:0, payment:0,
-      });
+      groups.set(key,{ym, houseName, rawRows:[]});
     }
-    const g=groups.get(key);
-    const depositVal=numOrNull(r[col("代收押金")]); if(depositVal!=null) g.deposit+=depositVal;
-    const advanceVal=numOrNull(r[col("代付")]); if(advanceVal!=null) g.advance+=advanceVal;
-    const sysVal=numOrNull(r[col("業績(系統服務費含稅)")]); if(sysVal!=null) g.systemFeeGross+=sysVal;
-    const mgmtVal=numOrNull(r[col("代管(代管費含稅)")]); if(mgmtVal!=null) g.mgmtFeeGross+=mgmtVal;
-    const landlordVal=numOrNull(r[col("房東服務費含稅")]); if(landlordVal!=null) g.landlordFeeGross+=landlordVal;
-    const repairVal=numOrNull(r[col("修繕費含稅")]); if(repairVal!=null) g.repairFeeGross+=repairVal;
-    const paymentVal=numOrNull(r[col("付款")]); if(paymentVal!=null) g.payment=paymentVal;
-
-    const rentVal=numOrNull(r[col("房客租金")]);
-    if(rentVal!=null){
-      g.tenants.push({
-        label:String(r[col("房客摘要")]||"").trim(),
-        name:String(r[col("房客姓名")]||"").trim(),
-        rent:rentVal,
-      });
-    }
+    groups.get(key).rawRows.push(r);
   });
-  return[...groups.values()];
+
+  return[...groups.values()].map(g=>{
+    const collect=colName=>g.rawRows.map(r=>numOrNull(r[col(colName)])).filter(v=>v!=null);
+    const payments=collect("付款");
+    const group={
+      ym:g.ym, houseName:g.houseName, tenants:[],
+      deposit:smartSum(collect("代收押金")),
+      advance:smartSum(collect("代付")),
+      systemFeeGross:smartSum(collect("業績(系統服務費含稅)")),
+      mgmtFeeGross:smartSum(collect("代管(代管費含稅)")),
+      landlordFeeGross:smartSum(collect("房東服務費含稅")),
+      repairFeeGross:smartSum(collect("修繕費含稅")),
+      payment:payments.length?payments[payments.length-1]:0, // 付款不累加，取最後一個有填的值
+    };
+    g.rawRows.forEach(r=>{
+      const rentVal=numOrNull(r[col("房客租金")]);
+      if(rentVal!=null){
+        group.tenants.push({
+          label:String(r[col("房客摘要")]||"").trim(),
+          name:String(r[col("房客姓名")]||"").trim(),
+          rent:rentVal,
+        });
+      }
+    });
+    return group;
+  });
 }
 
 let fangOwnerPayoutState={groups:[], invoices:null, cashflowRows:null, results:[]};

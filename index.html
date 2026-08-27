@@ -616,6 +616,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       代管(代管費含稅)、付款），再上傳對應的電子發票檔案，工具會用電子發票的「發票備註」欄位
       （格式：年月/房源名稱+費用類型/未稅/稅額）自動比對出正確的未稅、稅額跟發票號碼。
       找不到對應發票的，改用自算5%營業稅公式當暫時值並標記「⚠需查核」，還是會產生分錄放進傳票裡。
+      另外要上傳對應的支出金流表：傳票的順序、出款日期都會照金流表為主；
+      匯款手續費也不是固定金額，是看金流表上那一筆有沒有填「匯費」欄位，有才會產生6270這一行。
     </div>
     <div class="card">
       <div style="display:flex;gap:16px;flex-wrap:wrap;">
@@ -635,6 +637,14 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           </div>
           <input type="file" id="fang-owner-file-invoice" accept=".xlsx" hidden>
         </div>
+        <div>
+          <div class="dropzone" id="fang-owner-dz-cashflow" style="max-width:320px;">
+            <div class="dz-icon">📊</div>
+            <div class="dz-label">上傳對應的支出金流表</div>
+            <div class="dz-hint">支出金流表.xlsx</div>
+          </div>
+          <input type="file" id="fang-owner-file-cashflow" accept=".xlsx" hidden>
+        </div>
       </div>
       <div class="errbox" id="fang-owner-err"></div>
       <div id="fang-owner-result" style="display:none;margin-top:14px;">
@@ -651,7 +661,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="tbl-wrap" style="margin-top:10px;">
           <table>
             <thead><tr>
-              <th>#</th><th>年月</th><th>房源名稱</th><th class="right">房客租金合計</th><th class="right">匯給屋主</th><th>狀態</th>
+              <th>#</th><th>年月</th><th>房源名稱</th><th class="right">房客租金合計</th><th class="right">匯給屋主</th><th>排序</th><th>狀態</th>
             </tr></thead>
             <tbody id="fang-owner-tb"></tbody>
           </table>
@@ -3698,9 +3708,8 @@ function findOwnerFeeInvoices(invoices, ym, houseName, type){
   });
 }
 
-const FANG_OWNER_WIRE_FEE=15; // 匯款手續費，目前是固定值，跟已驗證過的真實傳票一致
 
-function buildOwnerPayoutVoucherLines(group, invoices){
+function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   const houseMatch=matchHousingFromDesc(group.houseName);
   const code=houseMatch?houseMatch.code:"";
   const houseLabel=houseMatch?houseMatch.matchedName:group.houseName;
@@ -3713,7 +3722,6 @@ function buildOwnerPayoutVoucherLines(group, invoices){
     lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}-${t.label}-${ym}租金-${t.name}`});
     rentTotal+=t.rent;
   });
-  lines.push({acctCode:"6270", custCode:"", dc:1, amount:FANG_OWNER_WIRE_FEE, summary:"匯款手續費"});
   if(group.deposit>0){
     lines.push({acctCode:"2205-03", custCode:code, dc:1, amount:group.deposit, summary:`${houseLabel}-${ym}押金`});
   }
@@ -3759,16 +3767,38 @@ function buildOwnerPayoutVoucherLines(group, invoices){
     creditKnownSum+=group.advance;
   }
 
-  const debitTotal=rentTotal+FANG_OWNER_WIRE_FEE+group.deposit;
-  const remainAmount=debitTotal-creditKnownSum;
+  // 先算出「不含匯費」的1110-01金額，拿這個金額去跟金流表比對（金流表上的支出欄位不含匯費，是分開記錄的）。
+  const baseRemain=(rentTotal+group.deposit)-creditKnownSum;
+
+  // 跟金流表比對：找「房源名稱有出現在說明裡、金額對得上baseRemain」的那一列，
+  // 抓它的日期（傳票日期用這個，不是今天）跟匯費欄位（有值才開6270，金額直接用金流表上的匯費，不是寫死的）。
+  let cf=null, cfIndex=null;
+  if(cashflowRows&&cashflowRows.length){
+    for(let i=0;i<cashflowRows.length;i++){
+      const c=cashflowRows[i];
+      if(c._ownerUsed) continue;
+      if(c.desc&&c.desc.includes(group.houseName)&&Math.abs(c.expense-baseRemain)<0.5){
+        cf=c; cfIndex=i; c._ownerUsed=true; break;
+      }
+    }
+  }
+
+  const wireFee=cf?(cf.fee||0):0;
+  if(wireFee>0){
+    lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
+  }
+  const remainAmount=baseRemain+wireFee;
   const tenantOrLandlord=landlordName||group.tenants[group.tenants.length-1]?.name||"";
   lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:remainAmount, summary:`${houseLabel}-${ym}租金-屋主${tenantOrLandlord}`});
 
+  if(!cf&&cashflowRows&&cashflowRows.length){
+    needsReviewReasons.push(`這個房源在金流表裡找不到對應的那一筆（房源名稱＋金額${fmtMoney(baseRemain)}對不起來），出款日期用今天代替，也沒有加匯費，請人工確認`);
+  }
   if(remainAmount<0){
     needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);
   }
 
-  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；")};
+  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；"), cfIndex, rocDateStr:cf?cf.rocDateStr:null};
 }
 
 // 解析「房管屋主出款」Excel（欄位：年月／房源名稱／房客摘要／房客姓名／房客租金／代收押金／代付／
@@ -3807,12 +3837,14 @@ function parseOwnerPayoutXlsx(data){
   return[...groups.values()];
 }
 
-let fangOwnerPayoutState={groups:[], invoices:null, results:[]};
+let fangOwnerPayoutState={groups:[], invoices:null, cashflowRows:null, results:[]};
 
 function fangOwnerPayoutRebuild(){
   if(!fangOwnerPayoutState.groups.length) return;
+  // 重算前先把金流表每一列的「已配對」標記清掉，避免上次配對結果卡住
+  (fangOwnerPayoutState.cashflowRows||[]).forEach(c=>{ delete c._ownerUsed; });
   fangOwnerPayoutState.results=fangOwnerPayoutState.groups.map(group=>({
-    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices)
+    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices, fangOwnerPayoutState.cashflowRows)
   }));
   renderOwnerPayoutResult();
 }
@@ -3846,14 +3878,35 @@ bindDropzone("fang-owner-dz-invoice","fang-owner-file-invoice",async(file,dz)=>{
   }
 });
 
+bindDropzone("fang-owner-dz-cashflow","fang-owner-file-cashflow",async(file,dz)=>{
+  clearErr("fang-owner-err");
+  try{
+    const data=await readFile(file);
+    fangOwnerPayoutState.cashflowRows=parseExpenseCashflowXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${fangOwnerPayoutState.cashflowRows.length}筆）`;
+    fangOwnerPayoutRebuild();
+  }catch(e){
+    showErr("fang-owner-err", e.message);
+  }
+});
+
 function renderOwnerPayoutResult(){
-  const results=fangOwnerPayoutState.results;
+  // 照金流表順序排（cfIndex小的在前）；對不到的排最後
+  const results=fangOwnerPayoutState.results.slice().sort((a,b)=>{
+    const ai=a.result.cfIndex, bi=b.result.cfIndex;
+    if(ai==null&&bi==null) return 0;
+    if(ai==null) return 1;
+    if(bi==null) return -1;
+    return ai-bi;
+  });
   document.getElementById("fang-owner-result").style.display=results.length?"block":"none";
   const okList=results.filter(r=>!r.result.needsReview);
   const reviewList=results.filter(r=>r.result.needsReview);
   document.getElementById("fang-owner-cnt-ok").textContent=okList.length;
   document.getElementById("fang-owner-cnt-review").textContent=reviewList.length;
 
+  const hasCashflow=!!(fangOwnerPayoutState.cashflowRows&&fangOwnerPayoutState.cashflowRows.length);
   const tb=document.getElementById("fang-owner-tb");
   tb.innerHTML="";
   results.forEach((item,i)=>{
@@ -3863,6 +3916,9 @@ function renderOwnerPayoutResult(){
     const statusTag=result.needsReview
       ?`<span class="tag warn">🔎 已產生-需查核</span><br><span style="font-size:10.5px;color:#c0392b;">${result.reviewReason}</span>`
       :'<span class="tag ok">✓ 可自動產生</span>';
+    const orderTag=!hasCashflow
+      ?'<span style="color:var(--ink-faint);font-size:11px;">（未上傳金流表）</span>'
+      :(result.cfIndex!=null?`<span class="tag ok">第${result.cfIndex+1}筆／${result.rocDateStr}</span>`:'<span class="tag warn">對不到</span>');
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${i+1}</td>
@@ -3870,6 +3926,7 @@ function renderOwnerPayoutResult(){
       <td>${group.houseName}</td>
       <td class="mono right">${fmtMoney(rentTotal)}</td>
       <td class="mono right">${payoutLine?fmtMoney(payoutLine.amount):"—"}</td>
+      <td>${orderTag}</td>
       <td style="max-width:320px;white-space:normal;">${statusTag}</td>
     `;
     tb.appendChild(tr);
@@ -3877,25 +3934,39 @@ function renderOwnerPayoutResult(){
 }
 
 document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
-  const results=fangOwnerPayoutState.results;
+  const results=fangOwnerPayoutState.results.slice().sort((a,b)=>{
+    const ai=a.result.cfIndex, bi=b.result.cfIndex;
+    if(ai==null&&bi==null) return 0;
+    if(ai==null) return 1;
+    if(bi==null) return -1;
+    return ai-bi;
+  });
   if(!results.length){
     showErr("fang-owner-err","目前沒有可以產生分錄的房源資料");
     return;
   }
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const rows=[HEADERS];
+  // 依日期分組，組內維持前面已經排好的金流表順序（Map會保留insertion順序）；
+  // 對不到金流表的沒有日期，歸到「未對到」這一組，用今天的日期輸出。
+  const byDate=new Map();
   results.forEach(({group,result})=>{
-    const rocYear=group.ym?parseInt(group.ym.slice(0,3))||115:115;
-    const dateStr=TODAY_ROC; // 房管屋主出款固定每月1號出款(跟社宅那邊邏輯一致)，先用今天日期，之後可依實際出款日調整
+    const dateStr=result.rocDateStr||TODAY_ROC;
+    const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
+    if(!byDate.has(dateStr)) byDate.set(dateStr,[]);
     result.lines.forEach(line=>{
-      rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+      byDate.get(dateStr).push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
     });
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-  XLSX.writeFile(wb, `房管屋主出款_${new Date().toISOString().slice(0,10)}.xlsx`);
+
+  [...byDate.keys()].sort().forEach(dateStr=>{
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+    const dateSafe=String(dateStr).replace(/\//g,"-");
+    XLSX.writeFile(wb, `房管屋主出款_${dateSafe}.xlsx`);
+  });
+
   clearErr("fang-owner-err");
 });
 

@@ -3724,11 +3724,23 @@ function parseInvoiceRefNote(remark){
 // 用「年月＋房源名稱＋費用類型」去找電子發票裡對應的那一張
 function findOwnerFeeInvoices(invoices, ym, houseName, type){
   if(!invoices) return [];
-  return invoices.filter(inv=>{
+  const relevant=invoices.filter(inv=>{
     const ref=inv._ownerRef;
-    if(!ref) return false;
-    return ref.ym===ym && ref.type===type && (ref.houseName===houseName||ref.houseName.startsWith(houseName)||houseName.startsWith(ref.houseName));
+    return ref && ref.ym===ym && ref.type===type;
   });
+  // 優先找房源名稱完全一樣的
+  const exact=relevant.filter(inv=>inv._ownerRef.houseName===houseName);
+  if(exact.length) return exact;
+  // 完全比對不到，才退回「開頭相同」的前綴比對——但如果前綴比對到的房源名稱不只一種
+  // （例如「景興」同時是「景興居所」跟「景興153」兩個不同房源的開頭），代表名稱有歧義，
+  // 寧可判定「找不到」也不要亂猜是哪一個，避免把兩個不同房源的發票金額混在一起算錯。
+  const prefixMatches=relevant.filter(inv=>{
+    const rn=inv._ownerRef.houseName;
+    return rn.startsWith(houseName)||houseName.startsWith(rn);
+  });
+  const distinctNames=new Set(prefixMatches.map(inv=>inv._ownerRef.houseName));
+  if(distinctNames.size===1) return prefixMatches;
+  return [];
 }
 
 
@@ -3786,19 +3798,49 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
 
   // 「業績」欄位實際上可能是系統服務費、房東服務費、或修繕費的其中一種（甚至同一個房源同時有好幾種），
-  // 不會事先知道是哪一種，所以把「業績＋房東服務費含稅＋修繕費含稅」這三個欄位的金額全部合併成一個池子，
-  // 再分別去查電子發票裡，這個房源這期到底實際開了哪些類型的發票（系統/房東/修繕，可能不只一種同時存在），
-  // 找到哪個類型就用哪個類型的科目、按發票上的實際數字產生分錄；三種類型都對應完之後，
-  // 如果金額還有剩（代表有部分是發票裡完全查不到對應類型的），才用「系統服務費」當預設科目、
-  // 自算5%營業稅公式處理剩下的部分，並標記需查核。
+  // 不會事先知道是哪一種，所以把「業績＋房東服務費含稅＋修繕費含稅」這三個欄位的金額全部合併成一個池子。
+  // 但要注意：這個房源在電子發票裡，可能同時存在好幾種類型的發票（例如系統服務費+修繕費都各自開了發票），
+  // 不代表這幾種類型都被算進這個池子的金額裡——舊版Excel資料可能只記錄了其中一種，
+  // 所以不能「只要有發票就全部塞進去」，而是要找「哪幾種類型的發票金額加總起來，剛好等於這個池子的金額」，
+  // 用這個組合才是真正對應到這筆資料實際包含的類型，其餘查到的發票類型即使存在也不會誤算進來。
   const miscFeeGrossTotal=group.systemFeeGross+group.landlordFeeGross+group.repairFeeGross;
-  let miscAccounted=0;
-  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "system", "4101-024", "系統服務費", "skipFallback");
-  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "landlord", "4101-022", "服務費", "skipFallback");
-  miscAccounted+=pushFeeLines(miscFeeGrossTotal, "repair", "4101-023", "修繕費", "skipFallback");
-  const miscUnaccounted=miscFeeGrossTotal-miscAccounted;
-  if(miscUnaccounted>0.5){
-    pushFeeLines(miscUnaccounted, "__none__", "4101-024", "系統服務費(類型未確認)");
+  if(miscFeeGrossTotal>0){
+    const miscTypeDefs=[
+      {type:"system", acctCode:"4101-024", labelZh:"系統服務費"},
+      {type:"landlord", acctCode:"4101-022", labelZh:"服務費"},
+      {type:"repair", acctCode:"4101-023", labelZh:"修繕費"},
+    ];
+    const candidates=miscTypeDefs.map(def=>{
+      const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, def.type);
+      const total=invs.reduce((s,inv)=>s+Math.round(inv._ownerRef.untaxed)+Math.round(inv._ownerRef.tax),0);
+      return{...def, invs, total};
+    }).filter(c=>c.invs.length>0);
+
+    // 找出「哪幾種類型的發票金額加總起來剛好等於miscFeeGrossTotal」的組合
+    function findMatchingSubset(cands, target){
+      const n=cands.length;
+      for(let mask=1; mask<(1<<n); mask++){
+        let sum=0; const chosen=[];
+        for(let i=0;i<n;i++){
+          if(mask&(1<<i)){ sum+=cands[i].total; chosen.push(cands[i]); }
+        }
+        if(Math.abs(sum-target)<0.5) return chosen;
+      }
+      return null;
+    }
+
+    const matchedSubset=candidates.length?findMatchingSubset(candidates, miscFeeGrossTotal):null;
+
+    if(matchedSubset){
+      matchedSubset.forEach(c=>{
+        pushFeeLines(c.total, c.type, c.acctCode, c.labelZh, "skipFallback");
+      });
+    }else{
+      // 找不到剛好等於這個池子金額的發票組合——可能是查到的發票類型剛好不是這筆資料代表的類型，
+      // 或者這份資料本身沒有對應到任何一張發票。這裡不硬猜要用哪個/哪幾個類型，
+      // 一律用「系統服務費」當預設科目、自算5%營業稅公式處理，並標記需人工核對正確類型。
+      pushFeeLines(miscFeeGrossTotal, "__none__", "4101-024", "系統服務費(類型未確認)");
+    }
   }
 
   if(group.advance>0){
@@ -3842,6 +3884,11 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
   // 沒有理由讓「需要人工查核」的房源用今天的日期、其他房源用金流表日期，兩者應該要一致。
   const batchDateStr=(cashflowRows&&cashflowRows._ownerBatchDate)?cashflowRows._ownerBatchDate:null;
   const rocDateStr=batchDateStr||(cf?cf.rocDateStr:null);
+
+  // 同一個房源的分錄，借方(dc=1)要全部排在前面、貸方(dc=2)全部排在後面，不能借貸交錯
+  // （例如6270手續費是在算完貸方之後才決定要不要開，原本會被排到貸方分錄的後面，這裡統一排序修正）。
+  // 用穩定排序，同樣是dc=1或dc=2的彼此之間，維持原本push進去的先後順序。
+  lines.sort((a,b)=>a.dc-b.dc);
 
   return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；"), cfIndex, rocDateStr};
 }
@@ -3900,7 +3947,9 @@ function parseOwnerPayoutXlsx(data){
     };
     g.rawRows.forEach(r=>{
       const rentVal=numOrNull(r[col("房客租金")]);
-      if(rentVal!=null){
+      // 租金是0也當作「這個房間這期沒有房客/沒收到租金」，不產生分錄——
+      // 跟空白欄位一樣處理，因為金額0的房客租金在傳票上沒有意義，只會多一筆沒用的0元分錄。
+      if(rentVal!=null && rentVal!==0){
         group.tenants.push({
           label:String(r[col("房客摘要")]||"").trim(),
           name:String(r[col("房客姓名")]||"").trim(),

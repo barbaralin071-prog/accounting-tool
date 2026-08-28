@@ -4029,15 +4029,38 @@ bindDropzone("fang-owner-dz-cashflow","fang-owner-file-cashflow",async(file,dz)=
   }
 });
 
-function renderOwnerPayoutResult(){
-  // 照金流表順序排（cfIndex小的在前）；對不到的排最後
-  const results=fangOwnerPayoutState.results.slice().sort((a,b)=>{
-    const ai=a.result.cfIndex, bi=b.result.cfIndex;
-    if(ai==null&&bi==null) return 0;
-    if(ai==null) return 1;
-    if(bi==null) return -1;
-    return ai-bi;
+// 對不到金流表的房源，不要整批丟到最後——改成用「這個房源在Excel裡原本的順序，前後最近的
+// 已經比對成功的房源」去內插出一個估計位置，這樣即使沒比對到，也會排在「大概該在的地方」附近，
+// 修正完金額之後不用整份重新排列，方便會計直接在原位置補登打。
+// 同一個區間裡如果有好幾筆都對不到，會依照它們在Excel裡的相對順序，平均分散在這個區間內，不會全部黏在同一個位置。
+function computeOwnerPayoutSortKeys(results){
+  const matched=[];
+  results.forEach((r,i)=>{ if(r.result.cfIndex!=null) matched.push({i, cf:r.result.cfIndex}); });
+  results.forEach((r,i)=>{
+    if(r.result.cfIndex!=null){ r._sortKey=r.result.cfIndex; return; }
+    let before=null, after=null;
+    for(const m of matched){
+      if(m.i<i) before=m;
+      else if(m.i>i && !after) after=m;
+    }
+    if(before&&after){
+      const ratio=(i-before.i)/(after.i-before.i);
+      r._sortKey=before.cf+ratio*(after.cf-before.cf);
+    }else if(before){
+      r._sortKey=before.cf+(i-before.i)*0.01;
+    }else if(after){
+      r._sortKey=after.cf-(after.i-i)*0.01;
+    }else{
+      r._sortKey=i; // 整批都對不到金流表(例如沒上傳金流表)，維持Excel原始順序
+    }
   });
+}
+
+function renderOwnerPayoutResult(){
+  // 照金流表順序排；對不到金流表的，用前後最近已比對成功的項目內插出估計位置，不會整批排到最後面
+  const results=fangOwnerPayoutState.results.slice();
+  computeOwnerPayoutSortKeys(results);
+  results.sort((a,b)=>a._sortKey-b._sortKey);
   document.getElementById("fang-owner-result").style.display=results.length?"block":"none";
   const okList=results.filter(r=>!r.result.needsReview);
   const reviewList=results.filter(r=>r.result.needsReview);
@@ -4072,13 +4095,9 @@ function renderOwnerPayoutResult(){
 }
 
 document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
-  const results=fangOwnerPayoutState.results.slice().sort((a,b)=>{
-    const ai=a.result.cfIndex, bi=b.result.cfIndex;
-    if(ai==null&&bi==null) return 0;
-    if(ai==null) return 1;
-    if(bi==null) return -1;
-    return ai-bi;
-  });
+  const results=fangOwnerPayoutState.results.slice();
+  computeOwnerPayoutSortKeys(results);
+  results.sort((a,b)=>a._sortKey-b._sortKey);
   if(!results.length){
     showErr("fang-owner-err","目前沒有可以產生分錄的房源資料");
     return;

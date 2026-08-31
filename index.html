@@ -3744,7 +3744,7 @@ function findOwnerFeeInvoices(invoices, ym, houseName, type){
 }
 
 
-function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
+function buildOwnerPayoutPartial(group, invoices){
   const houseMatch=matchHousingFromDesc(group.houseName);
   const code=houseMatch?houseMatch.code:"";
   const houseLabel=houseMatch?houseMatch.matchedName:group.houseName;
@@ -3758,9 +3758,6 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
     lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}-${t.label}-${ym}租金-${t.name}`});
     rentTotal+=t.rent;
   });
-  // 押金一筆一行，各自帶對應的房客姓名，不合併成一個總數
-  // （因為押金金額最後會直接變成傳票金額，不像業績/代管費那樣最後會被發票的真實數字取代，
-  // 所以每一筆押金的來源都要在傳票上清楚看得到，不能只留一個看不出明細的總數）。
   group.depositEntries.forEach(d=>{
     const nameLabel=d.name?`-${d.name}`:"";
     lines.push({acctCode:"2205-03", custCode:code, dc:1, amount:d.amount, summary:`${houseLabel}${nameLabel}-押金`});
@@ -3769,15 +3766,9 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
 
   let creditKnownSum=0;
   let landlordName="";
-  // 所有跟發票有關的分錄，先收集到這裡，最後統一照發票日期/號碼排序，再依序放進lines，
-  // 這樣不管是代管費、系統服務費、房東服務費、修繕費，只要都有對應到發票，
-  // 輸出順序就會跟電子發票本身開立的先後順序一致，不會照科目類型硬性排列。
   const pendingInvoiceLines=[];
-  // 找不到對應發票、只能用自算稅金公式的，跟找到發票的分開收集，最後統一放在有發票的分錄後面。
   const pendingFallbackLines=[];
 
-  // 每一張發票都各自產生一組完整的「未稅＋稅額」配對，不會把同類型好幾張發票的未稅金額合併成一行——
-  // 這樣不管同一個類型底下有幾張發票，都能各自對應到各自的發票號碼，一組一組清楚分開。
   function pushFeeLines(grossAmount, type, acctCode, labelZh, tagOverride){
     if(grossAmount<=0) return 0;
     const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, type);
@@ -3814,12 +3805,6 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
 
   pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
 
-  // 「業績」欄位實際上可能是系統服務費、房東服務費、或修繕費的其中一種（甚至同一個房源同時有好幾種），
-  // 不會事先知道是哪一種，所以把「業績＋房東服務費含稅＋修繕費含稅」這三個欄位的金額全部合併成一個池子。
-  // 但要注意：這個房源在電子發票裡，可能同時存在好幾種類型的發票（例如系統服務費+修繕費都各自開了發票），
-  // 不代表這幾種類型都被算進這個池子的金額裡——舊版Excel資料可能只記錄了其中一種，
-  // 所以不能「只要有發票就全部塞進去」，而是要找「哪幾種類型的發票金額加總起來，剛好等於這個池子的金額」，
-  // 用這個組合才是真正對應到這筆資料實際包含的類型，其餘查到的發票類型即使存在也不會誤算進來。
   const miscFeeGrossTotal=group.systemFeeGross+group.landlordFeeGross+group.repairFeeGross;
   if(miscFeeGrossTotal>0){
     const miscTypeDefs=[
@@ -3833,7 +3818,6 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
       return{...def, invs, total};
     }).filter(c=>c.invs.length>0);
 
-    // 找出「哪幾種類型的發票金額加總起來剛好等於miscFeeGrossTotal」的組合
     function findMatchingSubset(cands, target){
       const n=cands.length;
       for(let mask=1; mask<(1<<n); mask++){
@@ -3853,17 +3837,10 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
         pushFeeLines(c.total, c.type, c.acctCode, c.labelZh, "skipFallback");
       });
     }else{
-      // 找不到剛好等於這個池子金額的發票組合——可能是查到的發票類型剛好不是這筆資料代表的類型，
-      // 或者這份資料本身沒有對應到任何一張發票。這裡不硬猜要用哪個/哪幾個類型，
-      // 一律用「系統服務費」當預設科目、自算5%營業稅公式處理，並標記需人工核對正確類型。
       pushFeeLines(miscFeeGrossTotal, "__none__", "4101-024", "系統服務費(類型未確認)");
     }
   }
 
-  // 所有有對應到發票的費用分錄，統一照發票日期／發票號碼排序後才放進lines——
-  // 這樣不管是代管費、系統服務費、房東服務費、修繕費，只要都有對應到發票，
-  // 輸出順序就會跟電子發票本身開立的先後順序一致。找不到發票、用自算公式的部分，
-  // 因為沒有發票日期可以排序，就接在有發票的分錄後面。
   pendingInvoiceLines.sort((a,b)=>a.sortKey<b.sortKey?-1:a.sortKey>b.sortKey?1:0);
   pendingInvoiceLines.forEach(p=>{ lines.push(...p.group); });
   lines.push(...pendingFallbackLines);
@@ -3873,49 +3850,111 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
     creditKnownSum+=group.advance;
   }
 
-  // 先算出「不含匯費」的1110-01金額，拿這個金額去跟金流表比對（金流表上的支出欄位不含匯費，是分開記錄的）。
   const baseRemain=(rentTotal+depositTotal)-creditKnownSum;
 
-  // 跟金流表比對：找「房源名稱有出現在說明裡、金額對得上baseRemain」的那一列，
-  // 抓它的匯費欄位（有值才開6270，金額直接用金流表上的匯費，不是寫死的），也用來排序。
-  let cf=null, cfIndex=null;
-  if(cashflowRows&&cashflowRows.length){
+  return{group, houseLabel, code, lines, baseRemain, landlordName, needsReviewReasons};
+}
+
+// 第二階段：把第一階段算好的baseRemain拿去跟金流表比對，決定1110-01/6270要怎麼產生——
+// 一般情況是「一個房源對一筆金流表」；但如果金流表上是「A房源、B房源-年月租金-屋主XXX」
+// 這種兩個房源合併出款的寫法，會先試單獨比對，比對不到才試著跟另一個還沒比對成功的房源湊在一起，
+// 看看兩個房源的baseRemain加起來是不是剛好等於那一筆合併出款的金額，是的話就合併處理：
+// 兩個房源各自的分錄都保留(用各自的客戶供應商代號)，但1110-01只產生一次、不帶客戶供應商代號、
+// 摘要直接用金流表上原本的合併說明文字，金額是兩個房源的baseRemain加總(+匯費)。
+function finalizeOwnerPayoutResults(partials, cashflowRows){
+  const hasCashflow=!!(cashflowRows&&cashflowRows.length);
+  if(hasCashflow) cashflowRows.forEach(c=>{ delete c._ownerUsed; });
+  const batchDateStr=hasCashflow?cashflowRows._ownerBatchDate:null;
+
+  const results=partials.map(p=>{
+    if(hasCashflow){
+      const nameAppearsAnywhere=cashflowRows.some(c=>c.desc&&c.desc.includes(p.group.houseName));
+      if(!nameAppearsAnywhere){
+        return{ok:false, reason:`房源「${p.group.houseName}」在整份金流表裡完全找不到（連提到這個名稱的那一筆都沒有），這期可能沒有實際出款，不產生分錄`};
+      }
+    }
+    return{ok:true, partial:p, cfIndex:null, matchedWith:null};
+  });
+
+  results.forEach(r=>{
+    if(!r.ok) return;
+    if(!hasCashflow) return;
+    const p=r.partial;
     for(let i=0;i<cashflowRows.length;i++){
       const c=cashflowRows[i];
       if(c._ownerUsed) continue;
-      if(c.desc&&c.desc.includes(group.houseName)&&Math.abs(c.expense-baseRemain)<0.5){
-        cf=c; cfIndex=i; c._ownerUsed=true; break;
+      if(c.desc&&c.desc.includes(p.group.houseName)&&Math.abs(c.expense-p.baseRemain)<0.5){
+        c._ownerUsed=true;
+        r.cfIndex=i; r.cf=c;
+        return;
       }
     }
-  }
+  });
 
-  const wireFee=cf?(cf.fee||0):0;
-  if(wireFee>0){
-    lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
-  }
-  const remainAmount=baseRemain+wireFee;
-  const tenantOrLandlord=landlordName||group.tenants[group.tenants.length-1]?.name||"";
-  lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:remainAmount, summary:`${houseLabel}-${ym}租金-屋主${tenantOrLandlord}`});
+  results.forEach(r=>{
+    if(!r.ok||r.cf) return;
+    const p=r.partial;
+    for(let i=0;i<cashflowRows.length;i++){
+      const c=cashflowRows[i];
+      if(c._ownerUsed) continue;
+      if(!c.desc||!c.desc.includes(p.group.houseName)) continue;
+      const partner=results.find(r2=>r2!==r&&r2.ok&&!r2.cf&&r2.partial&&c.desc.includes(r2.partial.group.houseName));
+      if(!partner) continue;
+      if(Math.abs(c.expense-(p.baseRemain+partner.partial.baseRemain))<0.5){
+        c._ownerUsed=true;
+        r.cfIndex=i; r.cf=c; r.matchedWith=partner;
+        partner.cfIndex=i; partner.cf=c; partner.matchedWith=r;
+        return;
+      }
+    }
+  });
 
-  if(!cf&&cashflowRows&&cashflowRows.length){
-    needsReviewReasons.push(`這個房源在金流表裡找不到金額剛好對得上的那一筆（房源名稱＋金額${fmtMoney(baseRemain)}對不起來），出款日期還是會用這批金流表統一的出款日期，但沒有加匯費，也沒辦法排進正確的順序位置，請人工確認金額`);
-  }
-  if(remainAmount<0){
-    needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);
-  }
+  results.forEach(r=>{
+    if(!r.ok) return;
+    const p=r.partial;
+    const lines=p.lines.slice();
+    const needsReviewReasons=p.needsReviewReasons.slice();
 
-  // 出款日期一律用「這批金流表統一的出款日期」，不管這個房源有沒有精準比對到金額——
-  // 因為房管屋主出款本來就是同一天集中出款，金流表裡也只會有一個日期，
-  // 沒有理由讓「需要人工查核」的房源用今天的日期、其他房源用金流表日期，兩者應該要一致。
-  const batchDateStr=(cashflowRows&&cashflowRows._ownerBatchDate)?cashflowRows._ownerBatchDate:null;
-  const rocDateStr=batchDateStr||(cf?cf.rocDateStr:null);
+    if(r.matchedWith){
+      const isPrimary=r.cf.desc.indexOf(p.group.houseName)<=r.cf.desc.indexOf(r.matchedWith.partial.group.houseName);
+      const wireFee=isPrimary?(r.cf.fee||0):0;
+      if(isPrimary){
+        if(wireFee>0) lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
+        const combinedAmount=p.baseRemain+r.matchedWith.partial.baseRemain+wireFee;
+        lines.push({acctCode:"1110-01", custCode:"", dc:2, amount:combinedAmount, summary:r.cf.desc});
+      }
+      needsReviewReasons.push(`這個房源在金流表裡是跟「${r.matchedWith.partial.group.houseName}」合併成一筆出款（金流表說明：${r.cf.desc}），已經自動判斷合併處理，請人工確認金額分攤是否正確`);
+      lines.sort((a,b)=>a.dc-b.dc);
+      r.lines=lines;
+      r.needsReview=true;
+      r.reviewReason=needsReviewReasons.join("；");
+      r.rocDateStr=batchDateStr||r.cf.rocDateStr;
+      return;
+    }
 
-  // 同一個房源的分錄，借方(dc=1)要全部排在前面、貸方(dc=2)全部排在後面，不能借貸交錯
-  // （例如6270手續費是在算完貸方之後才決定要不要開，原本會被排到貸方分錄的後面，這裡統一排序修正）。
-  // 用穩定排序，同樣是dc=1或dc=2的彼此之間，維持原本push進去的先後順序。
-  lines.sort((a,b)=>a.dc-b.dc);
+    const wireFee=r.cf?(r.cf.fee||0):0;
+    if(wireFee>0) lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
+    const remainAmount=p.baseRemain+wireFee;
+    const tenantOrLandlord=p.landlordName||p.group.tenants[p.group.tenants.length-1]?.name||"";
+    lines.push({acctCode:"1110-01", custCode:p.code, dc:2, amount:remainAmount, summary:`${p.houseLabel}-${p.group.ym}租金-屋主${tenantOrLandlord}`});
 
-  return{lines, needsReview:needsReviewReasons.length>0, reviewReason:needsReviewReasons.join("；"), cfIndex, rocDateStr};
+    if(!r.cf&&hasCashflow){
+      needsReviewReasons.push(`這個房源在金流表裡找不到金額剛好對得上的那一筆（房源名稱＋金額${fmtMoney(p.baseRemain)}對不起來），出款日期還是會用這批金流表統一的出款日期，但沒有加匯費，也沒辦法排進正確的順序位置，請人工確認金額`);
+    }
+    if(remainAmount<0){
+      needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);
+    }
+    lines.sort((a,b)=>a.dc-b.dc);
+    r.lines=lines;
+    r.needsReview=needsReviewReasons.length>0;
+    r.reviewReason=needsReviewReasons.join("；");
+    r.rocDateStr=batchDateStr||(r.cf?r.cf.rocDateStr:null);
+  });
+
+  return results.map(r=>r.ok
+    ?{group:r.partial.group, result:{ok:true, lines:r.lines, needsReview:r.needsReview, reviewReason:r.reviewReason, cfIndex:r.cfIndex, rocDateStr:r.rocDateStr}}
+    :{group:{houseName:"", ym:"", tenants:[]}, result:r}
+  );
 }
 
 // 解析「房管屋主出款」Excel（欄位：年月／房源名稱／房客摘要／房客姓名／房客租金／代收押金／代付／
@@ -4002,8 +4041,6 @@ function fangOwnerPayoutRebuild(){
   if(!fangOwnerPayoutState.groups.length) return;
   const cashflowRows=fangOwnerPayoutState.cashflowRows;
   if(cashflowRows&&cashflowRows.length){
-    // 重算前先把金流表每一列的「已配對」標記清掉，避免上次配對結果卡住
-    cashflowRows.forEach(c=>{ delete c._ownerUsed; });
     // 算出這批金流表的「統一出款日期」：房管屋主出款本來就是同一天集中出款，
     // 取出現次數最多的日期當作整批的統一日期（多數情況下金流表裡本來就只會有單一日期，
     // 這樣算是為了保險，萬一混進極少數其他日期的雜訊列也不會被誤導）。
@@ -4016,9 +4053,8 @@ function fangOwnerPayoutRebuild(){
     dateCounts.forEach((count,date)=>{ if(count>maxCount){ maxCount=count; batchDate=date; } });
     cashflowRows._ownerBatchDate=batchDate;
   }
-  fangOwnerPayoutState.results=fangOwnerPayoutState.groups.map(group=>({
-    group, result:buildOwnerPayoutVoucherLines(group, fangOwnerPayoutState.invoices, cashflowRows)
-  }));
+  const partials=fangOwnerPayoutState.groups.map(group=>buildOwnerPayoutPartial(group, fangOwnerPayoutState.invoices));
+  fangOwnerPayoutState.results=finalizeOwnerPayoutResults(partials, cashflowRows);
   renderOwnerPayoutResult();
 }
 
@@ -4097,8 +4133,9 @@ function renderOwnerPayoutResult(){
   computeOwnerPayoutSortKeys(results);
   results.sort((a,b)=>a._sortKey-b._sortKey);
   document.getElementById("fang-owner-result").style.display=results.length?"block":"none";
-  const okList=results.filter(r=>!r.result.needsReview);
-  const reviewList=results.filter(r=>r.result.needsReview);
+  const excludedList=results.filter(r=>!r.result.ok);
+  const okList=results.filter(r=>r.result.ok&&!r.result.needsReview);
+  const reviewList=results.filter(r=>r.result.ok&&r.result.needsReview);
   document.getElementById("fang-owner-cnt-ok").textContent=okList.length;
   document.getElementById("fang-owner-cnt-review").textContent=reviewList.length;
 
@@ -4108,6 +4145,20 @@ function renderOwnerPayoutResult(){
   results.forEach((item,i)=>{
     const{group,result}=item;
     const rentTotal=group.tenants.reduce((s,t)=>s+t.rent,0);
+    if(!result.ok){
+      const tr=document.createElement("tr");
+      tr.innerHTML=`
+        <td>${i+1}</td>
+        <td>${group.ym}</td>
+        <td>${group.houseName}</td>
+        <td class="mono right">${fmtMoney(rentTotal)}</td>
+        <td class="mono right">—</td>
+        <td><span style="color:var(--ink-faint);font-size:11px;">不產生</span></td>
+        <td style="max-width:320px;white-space:normal;"><span class="tag warn">⛔ 未產生</span><br><span style="font-size:10.5px;color:#c0392b;">${result.reason}</span></td>
+      `;
+      tb.appendChild(tr);
+      return;
+    }
     const payoutLine=result.lines.find(l=>l.acctCode==="1110-01");
     const statusTag=result.needsReview
       ?`<span class="tag warn">🔎 已產生-需查核</span><br><span style="font-size:10.5px;color:#c0392b;">${result.reviewReason}</span>`
@@ -4142,6 +4193,7 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   const rows=[HEADERS];
   results.forEach(({group,result})=>{
+    if(!result.ok) return; // 這個房源在金流表裡完全找不到，已判定不產生分錄，下載時跳過
     const dateStr=result.rocDateStr||TODAY_ROC;
     const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
     result.lines.forEach(line=>{

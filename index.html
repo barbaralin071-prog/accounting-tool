@@ -3893,6 +3893,7 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
 
   results.forEach(r=>{
     if(!r.ok||r.cf) return;
+    if(!hasCashflow) return;
     const p=r.partial;
     for(let i=0;i<cashflowRows.length;i++){
       const c=cashflowRows[i];

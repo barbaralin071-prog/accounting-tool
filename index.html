@@ -3897,7 +3897,6 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
     const p=r.partial;
     for(let i=0;i<cashflowRows.length;i++){
       const c=cashflowRows[i];
-      if(c._ownerUsed) continue;
       if(!c.desc||!c.desc.includes(p.group.houseName)) continue;
       const partner=results.find(r2=>r2!==r&&r2.ok&&!r2.cf&&r2.partial&&c.desc.includes(r2.partial.group.houseName));
       if(!partner) continue;
@@ -3908,6 +3907,20 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
         return;
       }
     }
+  });
+
+  // 第三輪：單獨比對、合併比對都對不到金額的，改成「只要名稱找得到、不管金額對不對」都拿它的位置來排序——
+  // 這樣就算某個房源算出來的金額有誤差跟金流表對不上，順序還是會照金流表上這個房源名稱實際出現的位置排，
+  // 不會退回用Excel原始順序去估計。金額對不上這件事本身還是會照樣標記查核提醒人工確認，
+  // 但「排序」跟「金額有沒有對上」這兩件事分開處理，不會因為金額有誤差就連帶讓順序也跟著跑掉。
+  // 這裡不消耗掉那一列（不標記_ownerUsed、不設r.cf），只是借用它的位置索引，
+  // 這樣萬一之後還有別的房源需要用這一列來比對合併出款，也不會被卡住。
+  results.forEach(r=>{
+    if(!r.ok||r.cfIndex!=null) return;
+    if(!hasCashflow) return;
+    const p=r.partial;
+    const idx=cashflowRows.findIndex(c=>c.desc&&c.desc.includes(p.group.houseName));
+    if(idx>=0) r.cfIndex=idx;
   });
 
   results.forEach(r=>{
@@ -3940,7 +3953,10 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
     lines.push({acctCode:"1110-01", custCode:p.code, dc:2, amount:remainAmount, summary:`${p.houseLabel}-${p.group.ym}租金-屋主${tenantOrLandlord}`});
 
     if(!r.cf&&hasCashflow){
-      needsReviewReasons.push(`這個房源在金流表裡找不到金額剛好對得上的那一筆（房源名稱＋金額${fmtMoney(p.baseRemain)}對不起來），出款日期還是會用這批金流表統一的出款日期，但沒有加匯費，也沒辦法排進正確的順序位置，請人工確認金額`);
+      const foundByNameOnly=r.cfIndex!=null;
+      needsReviewReasons.push(foundByNameOnly
+        ?`這個房源在金流表裡找到了名稱相符的那一筆，但金額對不起來（算出來${fmtMoney(p.baseRemain)}，跟金流表上那一筆的支出金額不同），順序已經照金流表上這個名稱的位置排，但沒有加匯費，請人工確認金額`
+        :`這個房源在金流表裡找不到金額剛好對得上的那一筆（房源名稱＋金額${fmtMoney(p.baseRemain)}對不起來），出款日期還是會用這批金流表統一的出款日期，但沒有加匯費，也沒辦法排進正確的順序位置，請人工確認金額`);
     }
     if(remainAmount<0){
       needsReviewReasons.push(`算出來要匯給屋主的金額是負的（${fmtMoney(remainAmount)}），代表代管/系統服務費/代付這些扣款加起來已經超過房客租金總額，請人工確認這個房源這期的資料有沒有錯`);

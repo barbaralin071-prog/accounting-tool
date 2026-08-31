@@ -3753,42 +3753,59 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
 
   const lines=[];
   let rentTotal=0;
+  let depositTotal=0;
   group.tenants.forEach(t=>{
     lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}-${t.label}-${ym}租金-${t.name}`});
     rentTotal+=t.rent;
   });
-  if(group.deposit>0){
-    lines.push({acctCode:"2205-03", custCode:code, dc:1, amount:group.deposit, summary:`${houseLabel}-${ym}押金`});
-  }
+  // 押金一筆一行，各自帶對應的房客姓名，不合併成一個總數
+  // （因為押金金額最後會直接變成傳票金額，不像業績/代管費那樣最後會被發票的真實數字取代，
+  // 所以每一筆押金的來源都要在傳票上清楚看得到，不能只留一個看不出明細的總數）。
+  group.depositEntries.forEach(d=>{
+    const nameLabel=d.name?`-${d.name}`:"";
+    lines.push({acctCode:"2205-03", custCode:code, dc:1, amount:d.amount, summary:`${houseLabel}${nameLabel}-押金`});
+    depositTotal+=d.amount;
+  });
 
   let creditKnownSum=0;
   let landlordName="";
+  // 所有跟發票有關的分錄，先收集到這裡，最後統一照發票日期/號碼排序，再依序放進lines，
+  // 這樣不管是代管費、系統服務費、房東服務費、修繕費，只要都有對應到發票，
+  // 輸出順序就會跟電子發票本身開立的先後順序一致，不會照科目類型硬性排列。
+  const pendingInvoiceLines=[];
+  // 找不到對應發票、只能用自算稅金公式的，跟找到發票的分開收集，最後統一放在有發票的分錄後面。
+  const pendingFallbackLines=[];
 
-  // 代管費是每個房源都一定會有的固定科目，獨立處理。
+  // 每一張發票都各自產生一組完整的「未稅＋稅額」配對，不會把同類型好幾張發票的未稅金額合併成一行——
+  // 這樣不管同一個類型底下有幾張發票，都能各自對應到各自的發票號碼，一組一組清楚分開。
   function pushFeeLines(grossAmount, type, acctCode, labelZh, tagOverride){
     if(grossAmount<=0) return 0;
     const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, type);
     let accounted=0;
     if(invs.length){
-      let untaxedSum=0;
       invs.forEach(inv=>{
         const untaxedAmt=Math.round(inv._ownerRef.untaxed);
         const taxAmt=Math.round(inv._ownerRef.tax);
         const invNo=String(inv.invoiceNo||"").replace(/-/g,"");
-        lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`});
-        untaxedSum+=untaxedAmt;
-        creditKnownSum+=taxAmt;
+        pendingInvoiceLines.push({
+          sortKey:[inv.rocYear||0, inv.rocDateStr||"", inv.invoiceNo||""].join("|"),
+          group:[
+            {acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`${houseLabel}-${ym}${labelZh}`},
+            {acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`},
+          ],
+        });
+        creditKnownSum+=untaxedAmt+taxAmt;
         accounted+=untaxedAmt+taxAmt;
         if(type==="mgmt"&&inv.buyerName) landlordName=inv.buyerName;
       });
-      lines.push({acctCode, custCode:code, dc:2, amount:untaxedSum, summary:`${houseLabel}-${ym}${labelZh}`});
-      creditKnownSum+=untaxedSum;
     }else if(tagOverride!=="skipFallback"){
       needsReviewReasons.push(`${labelZh}在電子發票裡找不到對應的「發票備註」（年月${ym}／房源${group.houseName}），金額暫用自算5%營業稅公式，請人工核對發票`);
       const untaxedAmt=Math.round(grossAmount/1.05);
       const taxAmt=grossAmount-untaxedAmt;
-      lines.push({acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
-      lines.push({acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`});
+      pendingFallbackLines.push(
+        {acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`},
+        {acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`},
+      );
       creditKnownSum+=untaxedAmt+taxAmt;
       accounted=grossAmount;
     }
@@ -3843,13 +3860,21 @@ function buildOwnerPayoutVoucherLines(group, invoices, cashflowRows){
     }
   }
 
+  // 所有有對應到發票的費用分錄，統一照發票日期／發票號碼排序後才放進lines——
+  // 這樣不管是代管費、系統服務費、房東服務費、修繕費，只要都有對應到發票，
+  // 輸出順序就會跟電子發票本身開立的先後順序一致。找不到發票、用自算公式的部分，
+  // 因為沒有發票日期可以排序，就接在有發票的分錄後面。
+  pendingInvoiceLines.sort((a,b)=>a.sortKey<b.sortKey?-1:a.sortKey>b.sortKey?1:0);
+  pendingInvoiceLines.forEach(p=>{ lines.push(...p.group); });
+  lines.push(...pendingFallbackLines);
+
   if(group.advance>0){
     lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:group.advance, summary:""});
     creditKnownSum+=group.advance;
   }
 
   // 先算出「不含匯費」的1110-01金額，拿這個金額去跟金流表比對（金流表上的支出欄位不含匯費，是分開記錄的）。
-  const baseRemain=(rentTotal+group.deposit)-creditKnownSum;
+  const baseRemain=(rentTotal+depositTotal)-creditKnownSum;
 
   // 跟金流表比對：找「房源名稱有出現在說明裡、金額對得上baseRemain」的那一列，
   // 抓它的匯費欄位（有值才開6270，金額直接用金流表上的匯費，不是寫死的），也用來排序。
@@ -3937,7 +3962,10 @@ function parseOwnerPayoutXlsx(data){
     const payments=collect("付款");
     const group={
       ym:g.ym, houseName:g.houseName, tenants:[],
-      deposit:smartSum(collect("代收押金")),
+      // 押金比較特殊：因為押金金額最後會直接變成傳票金額（不像業績/代管費那樣最後會被發票的真實數字取代），
+      // 所以要保留每一筆押金各自的金額跟對應的房客姓名，不能合併成一個總數——
+      // 一筆押金就要在傳票上產生一行「房源-房客姓名-押金」，金額分開、摘要也分開帶各自的房客姓名。
+      depositEntries:[],
       advance:smartSum(collect("代付")),
       systemFeeGross:smartSum(collect("業績(系統服務費含稅)")),
       mgmtFeeGross:smartSum(collect("代管(代管費含稅)")),
@@ -3954,6 +3982,13 @@ function parseOwnerPayoutXlsx(data){
           label:String(r[col("房客摘要")]||"").trim(),
           name:String(r[col("房客姓名")]||"").trim(),
           rent:rentVal,
+        });
+      }
+      const depositVal=numOrNull(r[col("代收押金")]);
+      if(depositVal!=null && depositVal!==0){
+        group.depositEntries.push({
+          name:String(r[col("房客姓名")]||"").trim(),
+          amount:depositVal,
         });
       }
     });

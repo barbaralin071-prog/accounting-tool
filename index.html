@@ -3777,52 +3777,54 @@ function buildOwnerPayoutPartial(group, invoices){
 
   let creditKnownSum=0;
   let landlordName="";
-  const pendingInvoiceLines=[];
-  const pendingFallbackLines=[];
 
-  function pushFeeLines(grossAmount, type, acctCode, labelZh, tagOverride){
-    if(grossAmount<=0) return 0;
+  // 每個科目類別各自收集自己的分錄，最後再照固定順序（代付→業績/系統服務費→房東服務費→修繕費→代管費）
+  // 依序放進lines——同一個類別如果有好幾張發票，類別內部還是會照發票日期排序，
+  // 但不同類別之間不再互相穿插，改成照這個固定順序輸出。
+  function buildFeeLinesForType(grossAmount, type, acctCode, labelZh, tagOverride){
+    const out=[];
+    if(grossAmount<=0) return out;
     const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, type);
-    let accounted=0;
     if(invs.length){
-      invs.forEach(inv=>{
+      const sorted=invs.slice().sort((a,b)=>{
+        const ka=[a.rocYear||0, a.rocDateStr||"", a.invoiceNo||""].join("|");
+        const kb=[b.rocYear||0, b.rocDateStr||"", b.invoiceNo||""].join("|");
+        return ka<kb?-1:ka>kb?1:0;
+      });
+      sorted.forEach(inv=>{
         const untaxedAmt=Math.round(inv._ownerRef.untaxed);
         const taxAmt=Math.round(inv._ownerRef.tax);
         const invNo=String(inv.invoiceNo||"").replace(/-/g,"");
-        pendingInvoiceLines.push({
-          sortKey:[inv.rocYear||0, inv.rocDateStr||"", inv.invoiceNo||""].join("|"),
-          group:[
-            {acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`${houseLabel}-${ym}${labelZh}`},
-            {acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`},
-          ],
-        });
+        out.push(
+          {acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`${houseLabel}-${ym}${labelZh}`},
+          {acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`${houseLabel}-${ym}${labelZh}-${invNo}`},
+        );
         creditKnownSum+=untaxedAmt+taxAmt;
-        accounted+=untaxedAmt+taxAmt;
         if(type==="mgmt"&&inv.buyerName) landlordName=inv.buyerName;
       });
     }else if(tagOverride!=="skipFallback"){
       needsReviewReasons.push(`${labelZh}在電子發票裡找不到對應的「發票備註」（年月${ym}／房源${group.houseName}），金額暫用自算5%營業稅公式，請人工核對發票`);
       const untaxedAmt=Math.round(grossAmount/1.05);
       const taxAmt=grossAmount-untaxedAmt;
-      pendingFallbackLines.push(
+      out.push(
         {acctCode, custCode:code, dc:2, amount:untaxedAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`},
         {acctCode:"2290", custCode:code, dc:2, amount:taxAmt, summary:`⚠需查核-${houseLabel}-${ym}${labelZh}`},
       );
       creditKnownSum+=untaxedAmt+taxAmt;
-      accounted=grossAmount;
     }
-    return accounted;
+    return out;
   }
 
-  pushFeeLines(group.mgmtFeeGross, "mgmt", "4101-02", "代管費");
-
+  // 「業績」欄位實際上可能是系統服務費、房東服務費、或修繕費的其中一種（甚至同一個房源同時有好幾種），
+  // 用金額組合去比對電子發票，判斷實際包含哪幾種類型（邏輯不變），只是輸出順序改成固定的。
   const miscFeeGrossTotal=group.systemFeeGross+group.landlordFeeGross+group.repairFeeGross;
+  const miscTypeDefs=[
+    {type:"system", acctCode:"4101-024", labelZh:"系統服務費"},
+    {type:"landlord", acctCode:"4101-022", labelZh:"服務費"},
+    {type:"repair", acctCode:"4101-023", labelZh:"修繕費"},
+  ];
+  const matchedTypes=new Set();
   if(miscFeeGrossTotal>0){
-    const miscTypeDefs=[
-      {type:"system", acctCode:"4101-024", labelZh:"系統服務費"},
-      {type:"landlord", acctCode:"4101-022", labelZh:"服務費"},
-      {type:"repair", acctCode:"4101-023", labelZh:"修繕費"},
-    ];
     const candidates=miscTypeDefs.map(def=>{
       const invs=findOwnerFeeInvoices(invoices, ym, group.houseName, def.type);
       const total=invs.reduce((s,inv)=>s+Math.round(inv._ownerRef.untaxed)+Math.round(inv._ownerRef.tax),0);
@@ -3842,19 +3844,10 @@ function buildOwnerPayoutPartial(group, invoices){
     }
 
     const matchedSubset=candidates.length?findMatchingSubset(candidates, miscFeeGrossTotal):null;
-
     if(matchedSubset){
-      matchedSubset.forEach(c=>{
-        pushFeeLines(c.total, c.type, c.acctCode, c.labelZh, "skipFallback");
-      });
-    }else{
-      pushFeeLines(miscFeeGrossTotal, "__none__", "4101-024", "系統服務費(類型未確認)");
+      matchedSubset.forEach(c=>matchedTypes.add(c.type));
     }
   }
-
-  pendingInvoiceLines.sort((a,b)=>a.sortKey<b.sortKey?-1:a.sortKey>b.sortKey?1:0);
-  pendingInvoiceLines.forEach(p=>{ lines.push(...p.group); });
-  lines.push(...pendingFallbackLines);
 
   // 代付一筆一行，不合併成一個總數（跟押金一樣的處理原則）——摘要留空，
   // 因為之前確認過這是因為文中匯入後由會計手動選沖帳對象，不需要摘要文字。
@@ -3862,6 +3855,16 @@ function buildOwnerPayoutPartial(group, invoices){
     lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:a.amount, summary:""});
     creditKnownSum+=a.amount;
   });
+
+  // 固定順序輸出：業績(系統服務費) → 房東服務費 → 修繕費 → 代管費
+  if(matchedTypes.size>0){
+    if(matchedTypes.has("system")) lines.push(...buildFeeLinesForType(miscFeeGrossTotal, "system", "4101-024", "系統服務費", "skipFallback"));
+    if(matchedTypes.has("landlord")) lines.push(...buildFeeLinesForType(miscFeeGrossTotal, "landlord", "4101-022", "服務費", "skipFallback"));
+    if(matchedTypes.has("repair")) lines.push(...buildFeeLinesForType(miscFeeGrossTotal, "repair", "4101-023", "修繕費", "skipFallback"));
+  }else if(miscFeeGrossTotal>0){
+    lines.push(...buildFeeLinesForType(miscFeeGrossTotal, "__none__", "4101-024", "系統服務費(類型未確認)"));
+  }
+  lines.push(...buildFeeLinesForType(group.mgmtFeeGross, "mgmt", "4101-02", "代管費"));
 
   const baseRemain=(rentTotal+depositTotal)-creditKnownSum;
 

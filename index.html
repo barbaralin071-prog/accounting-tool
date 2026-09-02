@@ -1113,6 +1113,49 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
+  <!-- ── 上傳確認後的金流表，直接產生傳票（跟網銀比對並存的另一條路線） ── -->
+  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      📤 上傳社宅金流表 → 下載傳票
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      如果你已經把「下載金流表」產出的檔案，把裡面標記「【未核對－待查】」的部分人工確認、改成正確的
+      「地址-年月租金-房客姓名」格式，可以把這份修正過的金流表直接上傳回來，工具會直接讀取每一列的說明文字，
+      比對內建的房客資料判斷要不要扣二代健保，產生正確的傳票——這個流程跟上面「網銀比對」是並存的兩條路線，
+      你可以自己選擇要用哪一種。標記「【未核對－待查】」還沒處理的列，不會產生分錄，會列出來提醒你。
+    </div>
+    <div class="card">
+      <div class="dropzone" id="she-cf2-dz-file" style="max-width:340px;">
+        <div class="dz-icon">📊</div>
+        <div class="dz-label">上傳社宅金流表（已確認版本）</div>
+        <div class="dz-hint">金流表_社宅.xlsx</div>
+      </div>
+      <input type="file" id="she-cf2-file" accept=".xlsx" hidden>
+      <div class="errbox" id="she-cf2-err"></div>
+      <div id="she-cf2-result" style="display:none;margin-top:14px;">
+        <div class="match-summary" style="grid-template-columns:repeat(2,1fr);">
+          <div class="ms-cell ok">
+            <div class="ms-num" id="she-cf2-cnt-ok">0</div>
+            <div class="ms-lbl">✓ 可產生分錄</div>
+          </div>
+          <div class="ms-cell warn">
+            <div class="ms-num" id="she-cf2-cnt-skip">0</div>
+            <div class="ms-lbl">⚠ 跳過（未核對／地址查不到）</div>
+          </div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:10px;">
+          <table>
+            <thead><tr><th>#</th><th>日期</th><th>說明</th><th class="right">金額</th><th>狀態</th></tr></thead>
+            <tbody id="she-cf2-tb"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+          <button class="btn primary" id="she-cf2-btn-voucher">下載傳票</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </div><!-- /panel-she -->
 
 <!-- ══════════════════════════════════════════
@@ -7637,6 +7680,192 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     warnEl.style.display="block";
     warnEl.innerHTML=fileNote;
   }
+});
+
+/* ══════════════════════════════════════
+   社宅：上傳「已確認版本」的金流表 → 直接產生傳票（跟網銀比對並存的另一條路線）
+   ── 規則說明 ──
+   直接讀金流表每一列的「說明」文字，格式是「地址-年月租金-房客姓名」，
+   從裡面拆出地址、年月、房客姓名（可能不只一位，用「、」分隔），
+   用地址去比對 SHEZHAI_TENANTS 抓出這個房源的租金，判斷要不要扣二代健保（≥20,000），
+   套用的分錄邏輯，跟網銀比對那條路線的「收房客租金」完全一樣（1110-04/2205-01，
+   有健保的話拆成131450-01+2205-01）。
+   標記「【未核對－待查】」開頭的列，代表還沒人工確認過，不會產生分錄，列出來提醒。
+   地址比對不到房客資料庫的，也不會硬產生分錄，列出來提醒人工確認。
+══════════════════════════════════════ */
+
+// 地址裡的樓層數字，金流表跟房客資料庫的寫法可能不一致（中文數字 vs 阿拉伯數字，例如「四樓」vs「4樓」），
+// 統一轉成阿拉伯數字再比對，避免因為樓層寫法不同就比對不到。
+function sheNormalizeAddr(addr){
+  if(!addr) return "";
+  const cn={"一":"1","二":"2","三":"3","四":"4","五":"5","六":"6","七":"7","八":"8","九":"9"};
+  let s=addr.trim();
+  s=s.replace(/十([一二三四五六七八九])/g,(m,d)=>"1"+cn[d]);
+  s=s.replace(/([一二三四五六七八九])/g,(m,d)=>cn[d]);
+  s=s.replace(/十/g,"10");
+  return s;
+}
+
+function sheFindTenantByAddr(addr){
+  const norm=sheNormalizeAddr(addr);
+  return SHEZHAI_TENANTS.find(t=>sheNormalizeAddr(t.addr)===norm);
+}
+
+// 解析金流表「說明」欄位：「地址-年月租金-房客姓名」，年月是5位數格式（例如11509）
+function sheParseCashflowDesc(desc){
+  if(!desc) return null;
+  const m=desc.match(/^(.+?)-(\d{5})租金-(.+)$/);
+  if(!m) return null;
+  return{addr:m[1].trim(), rocYm:m[2], names:m[3].trim()};
+}
+
+let sheCf2State={rows:[], results:[]};
+
+function sheCf2Rebuild(){
+  const results=sheCf2State.rows.map(row=>{
+    if(row.isPending){
+      return{...row, ok:false, reason:"這一列還標記「【未核對－待查】」，代表還沒人工確認過，需要先確認清楚是哪位房客的入帳，再修正這一列的說明文字"};
+    }
+    const parsed=sheParseCashflowDesc(row.desc);
+    if(!parsed){
+      return{...row, ok:false, reason:"說明文字格式不是「地址-年月租金-房客姓名」，解析不出來，請確認格式"};
+    }
+    const tenant=sheFindTenantByAddr(parsed.addr);
+    if(!tenant){
+      return{...row, ok:false, reason:`地址「${parsed.addr}」在房客資料庫裡查不到對應的資料，請人工確認`};
+    }
+    const needsInsurance=tenant.rent>=SHE_INSURANCE_THRESHOLD;
+    const o=SHE_LANDLORD_BY_TENANT[tenant.id];
+    if(needsInsurance && !o){
+      return{...row, ok:false, reason:`「${tenant.name}」（${parsed.addr}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但在屋主匯款順序清單裡找不到對應的屋主資訊，需人工補上屋主姓名`};
+    }
+    const lines=[];
+    const summaryBase=`${parsed.addr}-${parsed.rocYm}租金-${parsed.names}`;
+    if(!needsInsurance){
+      lines.push({acctCode:"1110-04", custCode:"", dc:1, amount:row.amount, summary:summaryBase});
+      lines.push({acctCode:"2205-01", custCode:"", dc:2, amount:row.amount, summary:summaryBase});
+    }else{
+      const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+      const landlord=o.landlord;
+      lines.push({acctCode:"1110-04", custCode:"", dc:1, amount:row.amount, summary:summaryBase});
+      lines.push({acctCode:"131450-01", custCode:"", dc:2, amount:row.amount-insurance, summary:`${parsed.addr}-${parsed.rocYm}租金-屋主${landlord}`});
+      lines.push({acctCode:"2205-01", custCode:"", dc:2, amount:insurance, summary:`凌群-代扣(${parsed.addr}-${parsed.rocYm}租金-屋主${landlord})`});
+    }
+    return{...row, ok:true, lines};
+  });
+  sheCf2State.results=results;
+  sheRenderCf2Result();
+}
+
+function sheRenderCf2Result(){
+  const results=sheCf2State.results;
+  document.getElementById("she-cf2-result").style.display=results.length?"block":"none";
+  const okList=results.filter(r=>r.ok);
+  const skipList=results.filter(r=>!r.ok);
+  document.getElementById("she-cf2-cnt-ok").textContent=okList.length;
+  document.getElementById("she-cf2-cnt-skip").textContent=skipList.length;
+
+  const tb=document.getElementById("she-cf2-tb");
+  tb.innerHTML="";
+  results.forEach((r,i)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${i+1}</td>
+      <td>${r.dateStr||"—"}</td>
+      <td style="max-width:360px;white-space:normal;">${r.desc}</td>
+      <td class="mono right">${fmtMoney(r.amount)}</td>
+      <td style="max-width:280px;white-space:normal;">${r.ok?'<span class="tag ok">✓ 可產生</span>':`<span class="tag warn">⚠ ${r.reason}</span>`}</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+bindDropzone("she-cf2-dz-file","she-cf2-file",async(file,dz)=>{
+  clearErr("she-cf2-err");
+  try{
+    const data=await readFile(file);
+    const wb=XLSX.read(data,{type:"array"});
+    const ws=wb.Sheets[wb.SheetNames[0]];
+    const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+    const hi=aoa.findIndex(r=>r&&r[0]==="日期");
+    if(hi===-1) throw new Error("找不到「日期」欄位標題，請確認是社宅金流表的格式");
+
+    // 檔案最上面第一列會有「115年」這種標題，先抓出民國年份，
+    // 因為底下每一列的日期欄位是純文字格式（例如「8月26日」），沒有年份資訊，要從這裡補。
+    let headerRocYear=null;
+    for(let i=0;i<hi;i++){
+      const cell=aoa[i]&&aoa[i][0];
+      if(cell){
+        const m=String(cell).match(/^(\d+)年/);
+        if(m){ headerRocYear=Number(m[1]); break; }
+      }
+    }
+
+    const rows=[];
+    let lastDateStr=null, lastRocYear=headerRocYear;
+    for(let i=hi+1;i<aoa.length;i++){
+      const r=aoa[i];
+      if(!r||!r[3]) continue; // 收入欄位是空的，不是一筆入帳
+      let dateStr=lastDateStr;
+      if(r[0]){
+        const roc=toRoc(r[0]);
+        if(!isNaN(roc.year)&&!isNaN(roc.month)&&!isNaN(roc.day)){
+          dateStr=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
+          lastRocYear=roc.year;
+        }else{
+          // 「7月20日★」這種文字格式，去掉可能附加的★記號
+          const cleaned=String(r[0]).replace(/★/g,"").trim();
+          const m=cleaned.match(/(\d+)月(\d+)日/);
+          if(m&&lastRocYear){
+            dateStr=`${lastRocYear}/${pad2(Number(m[1]))}/${pad2(Number(m[2]))}`;
+          }
+        }
+        lastDateStr=dateStr;
+      }
+      const desc=String(r[1]||"").trim();
+      rows.push({
+        dateStr,
+        desc,
+        amount:Number(r[3])||0,
+        isPending:desc.includes("【未核對－待查】"),
+      });
+    }
+    if(!rows.length) throw new Error("這份金流表裡找不到任何一筆收入資料");
+
+    sheCf2State.rows=rows;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${rows.length}筆）`;
+    sheCf2Rebuild();
+  }catch(e){
+    showErr("she-cf2-err", e.message);
+  }
+});
+
+document.getElementById("she-cf2-btn-voucher").addEventListener("click",()=>{
+  const okList=sheCf2State.results.filter(r=>r.ok);
+  if(!okList.length){
+    showErr("she-cf2-err","目前沒有可以產生分錄的資料");
+    return;
+  }
+  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
+  const COLS=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+  const byDate=new Map();
+  okList.forEach(r=>{
+    const roc=r.dateStr.split("/").map(Number);
+    if(!byDate.has(r.dateStr)) byDate.set(r.dateStr,[]);
+    r.lines.forEach(line=>{
+      byDate.get(r.dateStr).push([roc[0],"DEFAULT",3,r.dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+    });
+  });
+  [...byDate.keys()].sort().forEach(dateStr=>{
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
+    ws["!cols"]=COLS;
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "傳票");
+    const dateSafe=dateStr.replace(/\//g,"-");
+    XLSX.writeFile(wb, `傳票匯入_社宅_收房客租金-13658_${dateSafe}.xlsx`);
+  });
+  clearErr("she-cf2-err");
 });
 
 /* ══════════════════════════════════════

@@ -1156,6 +1156,27 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
+  <!-- ── 社宅立帳檔（131450-01），流程跟房管一樣，兩條產生傳票的路線都適用 ── -->
+  <div class="card" id="she-lizhang-card" style="margin-top:20px;display:none;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔（社宅）</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      下面每一列對應到剛才下載的「一個傳票檔案」（不管是網銀比對那條路線、還是上傳金流表那條路線產生的都算），
+      請照你實際匯入文中的順序，把每個檔案各自拿到的真正傳票號碼填進去，再產生立帳檔（一個檔案對應一個立帳檔）。
+      立帳檔只會抓傳票裡科目代號為 <strong>131450-01</strong> 的那些列（社宅的健保代扣、公司墊付這幾種情況都會用到這個科目）。
+      立帳單號的流水序號是照「每一列本身的交易日期」共用同一份記錄（跟房管那邊也共用同一份），
+      就算同一天有好幾個不同檔案、對應不同的真正傳票號碼，序號還是會連續編號、不會撞。
+    </div>
+    <div id="she-lizhang-inputs"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+      <span style="font-size:11.5px;color:var(--ink-faint);">序號會記住每個交易日期上次用到哪裡，同一個日期分好幾次處理也不會撞號</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="she-btn-lizhang-clear" title="清空所有交易日期記住的序號，重新從1001起算">清除序號記錄</button>
+        <button class="btn primary" id="she-btn-lizhang">產生立帳檔</button>
+      </div>
+    </div>
+    <div class="errbox" id="she-lizhang-err"></div>
+  </div>
+
 </div><!-- /panel-she -->
 
 <!-- ══════════════════════════════════════════
@@ -7640,6 +7661,8 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
 
   // 一個傳票只會有一個日期，所以依日期切開，各自下載成獨立的傳票檔案，
   // 不會把不同日期的分錄混在同一份檔案裡（13658 收房客租金、14432 付屋主都適用這個規則）。
+  // 同時把每個檔案登記進sheVoucherBatches，供社宅立帳功能使用（跟房管立帳同一套邏輯：
+  // 一個檔案一個立帳批次，因為一個檔案對應到文中一個真正的傳票號碼）。
   function downloadByDate(rowsToSplit, label){
     const groups=new Map();
     rowsToSplit.forEach(r=>{
@@ -7654,7 +7677,9 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "傳票");
       const dateSafe=String(date).replace(/\//g,"-");
-      XLSX.writeFile(wb, `傳票匯入_社宅_${label}_${dateSafe}.xlsx`);
+      const fileKey=`傳票匯入_社宅_${label}_${dateSafe}`;
+      XLSX.writeFile(wb, `${fileKey}.xlsx`);
+      sheVoucherBatches.set(fileKey, groups.get(date));
     });
     return dates.length;
   }
@@ -7680,6 +7705,7 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     warnEl.style.display="block";
     warnEl.innerHTML=fileNote;
   }
+  renderSheLizhangInputs();
 });
 
 /* ══════════════════════════════════════
@@ -7718,6 +7744,10 @@ function sheParseCashflowDesc(desc){
   if(!m) return null;
   return{addr:m[1].trim(), rocYm:m[2], names:m[3].trim()};
 }
+
+// 社宅傳票批次登記表：兩條產生傳票的路線（網銀比對／上傳金流表）共用同一份，
+// 供社宅立帳功能使用——fileKey(不含副檔名) -> 這個檔案的傳票列陣列
+let sheVoucherBatches=new Map();
 
 let sheCf2State={rows:[], results:[]};
 
@@ -7863,10 +7893,103 @@ document.getElementById("she-cf2-btn-voucher").addEventListener("click",()=>{
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "傳票");
     const dateSafe=dateStr.replace(/\//g,"-");
-    XLSX.writeFile(wb, `傳票匯入_社宅_收房客租金-13658_${dateSafe}.xlsx`);
+    const fileKey=`傳票匯入_社宅_收房客租金-13658_${dateSafe}`;
+    XLSX.writeFile(wb, `${fileKey}.xlsx`);
+    sheVoucherBatches.set(fileKey, byDate.get(dateStr));
   });
   clearErr("she-cf2-err");
+  renderSheLizhangInputs();
 });
+
+/* ══════════════════════════════════════
+   社宅立帳檔（131450-01），邏輯跟房管支出立帳完全一樣：
+   一個檔案對應一個立帳批次，序號跟房管共用同一份記錄（FANG_LIZHANG_SEQ_KEY），
+   確保同一天不管是房管還是社宅的立帳，序號都不會撞。
+══════════════════════════════════════ */
+function renderSheLizhangInputs(){
+  const card=document.getElementById("she-lizhang-card");
+  const wrap=document.getElementById("she-lizhang-inputs");
+  if(!sheVoucherBatches.size){ card.style.display="none"; return; }
+  card.style.display="block";
+  wrap.innerHTML="";
+  [...sheVoucherBatches.keys()].sort().forEach(fileKey=>{
+    const rows=sheVoucherBatches.get(fileKey);
+    const rowCount=rows.length;
+    const lizhangCount=rows.filter(r=>r[4]==="131450-01").length;
+    const div=document.createElement("div");
+    div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
+    div.innerHTML=`
+      <span style="min-width:280px;font-size:13px;">${fileKey}.xlsx</span>
+      <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
+      <input type="text" class="she-lizhang-vnum" data-file="${fileKey}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById("she-btn-lizhang").addEventListener("click",()=>{
+  clearErr("she-lizhang-err");
+  const inputs=[...document.querySelectorAll(".she-lizhang-vnum")];
+  const vnumByFile={};
+  inputs.forEach(inp=>{
+    const v=inp.value.trim();
+    if(v) vnumByFile[inp.dataset.file]=v;
+  });
+  if(!Object.keys(vnumByFile).length){
+    showErr("she-lizhang-err","請至少填一個檔案對應的真正傳票號碼");
+    return;
+  }
+
+  const LIZHANG_CODES_SHE=["131450-01"];
+  // 序號記錄跟房管共用同一份（FANG_LIZHANG_SEQ_KEY），確保同一天不管哪個部門的立帳都不會撞號。
+  const seqMap=fangLoadLizhangSeqMap();
+  let anyOutput=false;
+
+  Object.keys(vnumByFile).sort().forEach(fileKey=>{
+    const voucherRows=sheVoucherBatches.get(fileKey);
+    if(!voucherRows) return;
+    const realVoucherNo=vnumByFile[fileKey];
+
+    const outRows=[];
+    voucherRows.forEach((r,idx)=>{
+      const acctCode=r[4];
+      if(!LIZHANG_CODES_SHE.includes(acctCode)) return;
+      const rowDate=r[3]; // 這一列本身的交易日期，序號記錄用這個當key
+      const seqInFile=(seqMap[rowDate]||1000)+1;
+      seqMap[rowDate]=seqInFile;
+      const lizhangDateRoc=String(rowDate).replace(/\//g,"");
+      const lizhangNo=lizhangDateRoc+String(seqInFile);
+      // 傳票序號＝這一列在「這個檔案」裡是第幾列（因為一個檔案對應一個真正的傳票號碼）
+      const seqNo=String(idx+1).padStart(4,"0");
+      outRows.push([
+        lizhangNo, acctCode, rowDate, r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
+      ]);
+    });
+
+    if(!outRows.length) return;
+    anyOutput=true;
+    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
+    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
+    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
+    XLSX.writeFile(wb, `立帳檔_社宅_${fileKey}.xlsx`);
+  });
+
+  if(!anyOutput){
+    showErr("she-lizhang-err","填的這些檔案裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
+  }else{
+    fangSaveLizhangSeqMap(seqMap);
+    clearErr("she-lizhang-err");
+  }
+});
+
+document.getElementById("she-btn-lizhang-clear").addEventListener("click",()=>{
+  fangSaveLizhangSeqMap({});
+  clearErr("she-lizhang-err");
+  showErr("she-lizhang-err","已清空所有交易日期記住的序號（跟房管共用同一份），下次產生立帳檔會從1001重新起算");
+});
+
 
 /* ══════════════════════════════════════
    發票對獎

@@ -3949,8 +3949,18 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
     const wireFee=r.cf?(r.cf.fee||0):0;
     if(wireFee>0) lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
     const remainAmount=p.baseRemain+wireFee;
-    const tenantOrLandlord=p.landlordName||p.group.tenants[p.group.tenants.length-1]?.name||"";
-    lines.push({acctCode:"1110-01", custCode:p.code, dc:2, amount:remainAmount, summary:`${p.houseLabel}-${p.group.ym}租金-屋主${tenantOrLandlord}`});
+    // 1110-01的摘要：有比對到金流表的話，直接照抄金流表原本的說明文字（一字不改），
+    // 因為金流表上的屋主姓名才是正確、權威的來源；不能用發票的客戶名稱去重組，
+    // 因為發票登記的名稱不一定跟金流表上的屋主姓名完全一致（可能是公司名稱、或英文姓名寫法不同等）。
+    // 只有真的比對不到金流表（沒上傳金流表、或連名稱都找不到）的情況，才退回自己組一個暫時的摘要。
+    let payoutSummary;
+    if(r.cf){
+      payoutSummary=r.cf.desc;
+    }else{
+      const tenantOrLandlord=p.landlordName||p.group.tenants[p.group.tenants.length-1]?.name||"";
+      payoutSummary=`${p.houseLabel}-${p.group.ym}租金-屋主${tenantOrLandlord}`;
+    }
+    lines.push({acctCode:"1110-01", custCode:p.code, dc:2, amount:remainAmount, summary:payoutSummary});
 
     if(!r.cf&&hasCashflow){
       const foundByNameOnly=r.cfIndex!=null;

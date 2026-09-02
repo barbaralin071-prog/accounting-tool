@@ -3751,11 +3751,22 @@ function buildOwnerPayoutPartial(group, invoices){
   const ym=group.ym;
   const needsReviewReasons=[];
 
+  // 判斷「房客摘要」是不是真正的房號（例如A、B、8樓、店面、車位），
+  // 還是像「7月」「8月」這種其實是月份、不是房間代號的標籤——
+  // 月份格式的標籤不該出現在傳票摘要裡（因為它代表的是「哪個月份的租金」，不是「哪個房間」），
+  // 只有真正代表房間的標籤才要保留在摘要裡。
+  function isRealRoomLabel(label){
+    if(!label) return false;
+    if(/^\d{1,2}月$/.test(label)) return false; // "7月"、"12月"這種月份格式，不是房號
+    return true;
+  }
+
   const lines=[];
   let rentTotal=0;
   let depositTotal=0;
   group.tenants.forEach(t=>{
-    lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}-${t.label}-${ym}租金-${t.name}`});
+    const roomTag=isRealRoomLabel(t.label)?`-${t.label}`:"";
+    lines.push({acctCode:"2205-02", custCode:code, dc:1, amount:t.rent, summary:`${houseLabel}${roomTag}-${ym}租金-${t.name}`});
     rentTotal+=t.rent;
   });
   group.depositEntries.forEach(d=>{
@@ -3845,10 +3856,12 @@ function buildOwnerPayoutPartial(group, invoices){
   pendingInvoiceLines.forEach(p=>{ lines.push(...p.group); });
   lines.push(...pendingFallbackLines);
 
-  if(group.advance>0){
-    lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:group.advance, summary:""});
-    creditKnownSum+=group.advance;
-  }
+  // 代付一筆一行，不合併成一個總數（跟押金一樣的處理原則）——摘要留空，
+  // 因為之前確認過這是因為文中匯入後由會計手動選沖帳對象，不需要摘要文字。
+  group.advanceEntries.forEach(a=>{
+    lines.push({acctCode:"131450-01", custCode:code, dc:2, amount:a.amount, summary:""});
+    creditKnownSum+=a.amount;
+  });
 
   const baseRemain=(rentTotal+depositTotal)-creditKnownSum;
 
@@ -4028,11 +4041,11 @@ function parseOwnerPayoutXlsx(data){
     const payments=collect("付款");
     const group={
       ym:g.ym, houseName:g.houseName, tenants:[],
-      // 押金比較特殊：因為押金金額最後會直接變成傳票金額（不像業績/代管費那樣最後會被發票的真實數字取代），
-      // 所以要保留每一筆押金各自的金額跟對應的房客姓名，不能合併成一個總數——
-      // 一筆押金就要在傳票上產生一行「房源-房客姓名-押金」，金額分開、摘要也分開帶各自的房客姓名。
+      // 押金、代付都比較特殊：因為金額最後會直接變成傳票金額（不像業績/代管費那樣最後會被發票的真實數字取代），
+      // 所以要保留每一筆各自的金額，不能合併成一個總數——
+      // 一筆就要在傳票上產生一行，金額分開，不合併。
       depositEntries:[],
-      advance:smartSum(collect("代付")),
+      advanceEntries:[],
       systemFeeGross:smartSum(collect("業績(系統服務費含稅)")),
       mgmtFeeGross:smartSum(collect("代管(代管費含稅)")),
       landlordFeeGross:smartSum(collect("房東服務費含稅")),
@@ -4056,6 +4069,10 @@ function parseOwnerPayoutXlsx(data){
           name:String(r[col("房客姓名")]||"").trim(),
           amount:depositVal,
         });
+      }
+      const advanceVal=numOrNull(r[col("代付")]);
+      if(advanceVal!=null && advanceVal!==0){
+        group.advanceEntries.push({amount:advanceVal});
       }
     });
     return group;

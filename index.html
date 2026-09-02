@@ -7454,10 +7454,13 @@ function sheBuildVoucherRows(targetYm){
   const rocYm=sheRocYM(targetYm);
 
   // ══ 區塊一：收房客租金（13658帳戶）── 照網銀金流表房客實際入帳的順序 ══
-  // 只有「有房客入帳、且對到真實網銀那一筆」的才會出現在這裡；
-  // 純靠收款單佐證、網銀裡根本找不到對應那一筆的，沒有入帳順序可循，附加在最後（用應繳日期排）。
-  // 跟付屋主一樣，也要看媒合資料的租金欄位判斷要不要扣二代健保。
-  const matchedForYm=sheState.allMatched.filter(m=>m.due.ym===targetYm);
+  // 傳票要跟著金流表走：金流表這次有幾筆入帳，傳票就該有幾筆，不能因為「應繳月份」剛好不是
+  // 目前選的這個月份，就把這筆從傳票裡排除掉（例如房客補繳上個月房租，這筆帳還是要記進當天的傳票）。
+  // 所以這裡不再限定「應繳月份要等於目標月份」，只要這筆是「這次上傳的網銀資料裡有比對到」的，
+  // 就一定要出現在傳票裡；摘要裡的「幾年幾月租金」也改用這一筆自己實際的應繳月份，不是統一套用目標月份。
+  // 只有透過累積帳本（不是這次網銀比對到的、是靠之前幾天的記錄回補的）才會限定要跟目標月份一致，
+  // 避免把毫不相干、很久以前的歷史記錄也拉進來。
+  const matchedForYm=sheState.allMatched.filter(m=>typeof m.bank._bidx==="number" || m.due.ym===targetYm);
   const withBank=matchedForYm.filter(m=>typeof m.bank._bidx==="number");
   const withoutBank=matchedForYm.filter(m=>typeof m.bank._bidx!=="number");
   withBank.sort((a,b)=>a.bank._bidx-b.bank._bidx);
@@ -7478,6 +7481,9 @@ function sheBuildVoucherRows(targetYm){
     const receivedAmt=item.bank.amount;
     const tenantName=tenant.name;
     const recvRocYear=Math.floor(paidDateKey/10000)-1911;
+    // 摘要用這一筆自己實際的應繳月份（item.due.ym），不是targetYm——
+    // 這樣就算是補繳其他月份的房租，摘要也會正確顯示是哪個月的租金，不會被誤標成目標月份。
+    const itemRocYm=sheRocYM(item.due.ym);
 
     if(paidDateKey>firstOfMonthKey){
       warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），這種「沖銷公司墊款」的分錄尚未確認過，請人工處理`);
@@ -7486,13 +7492,13 @@ function sheBuildVoucherRows(targetYm){
 
     const recvDateStr=rocStr(paidDateKey);
     if(!needsInsurance){
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","Y"]);
     }else{
       const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${itemRocYm}租金-屋主${landlord}`,"","Y"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${itemRocYm}租金-屋主${landlord})`,"","Y"]);
     }
   });
 

@@ -666,7 +666,10 @@ button.btn.ghost:hover{background:var(--accent-soft);}
             <tbody id="fang-owner-tb"></tbody>
           </table>
         </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px;">
+          <label style="font-size:12.5px;color:var(--ink-soft);">每個檔案幾筆房源：
+            <input type="number" id="fang-owner-page-size" value="13" min="1" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-left:4px;">
+          </label>
           <button class="btn primary" id="fang-owner-btn-voucher">下載房管屋主出款傳票</button>
         </div>
       </div>
@@ -4235,24 +4238,42 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
     showErr("fang-owner-err","目前沒有可以產生分錄的房源資料");
     return;
   }
-  // 房管屋主出款本來就是同一天集中出款，傳票只會有一個檔案，不像其他分頁要照日期拆成好幾份；
-  // 順序照金流表排（cfIndex），對不到金流表的排最後、但一樣用同一批的統一出款日期。
+  // 順序照金流表排（cfIndex），對不到金流表的用估計位置排、但一樣用同一批的統一出款日期。
+  // 每個檔案的房源數量可以自訂（預設13筆，對應銀行整批轉帳明細一頁的筆數），
+  // 這樣傳票檔案的分頁方式就能跟銀行匯款明細的分頁對得起來，方便逐頁核對。
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const rows=[HEADERS];
-  results.forEach(({group,result})=>{
-    if(!result.ok) return; // 這個房源在金流表裡完全找不到，已判定不產生分錄，下載時跳過
-    const dateStr=result.rocDateStr||TODAY_ROC;
-    const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
-    result.lines.forEach(line=>{
-      rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
-    });
-  });
+  const okResults=results.filter(r=>r.result.ok); // 這個房源在金流表裡完全找不到的，已判定不產生分錄，下載時排除
 
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
-  const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
-  XLSX.writeFile(wb, `房管屋主出款_${new Date().toISOString().slice(0,10)}.xlsx`);
+  const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
+
+  // 檔名用的日期：優先用這批金流表的統一出款日期(民國轉西元、去掉斜線)，沒有金流表才用今天
+  let fileDate;
+  const batchDateStr=fangOwnerPayoutState.cashflowRows?fangOwnerPayoutState.cashflowRows._ownerBatchDate:null;
+  if(batchDateStr){
+    const parts=batchDateStr.split("/").map(Number); // 例如 115/08/20
+    const westernYear=parts[0]+1911;
+    fileDate=`${westernYear}${String(parts[1]).padStart(2,"0")}${String(parts[2]).padStart(2,"0")}`;
+  }else{
+    fileDate=new Date().toISOString().slice(0,10).replace(/-/g,"");
+  }
+
+  const totalPages=Math.ceil(okResults.length/pageSizeInput);
+  for(let page=0; page<totalPages; page++){
+    const pageResults=okResults.slice(page*pageSizeInput, (page+1)*pageSizeInput);
+    const rows=[HEADERS];
+    pageResults.forEach(({group,result})=>{
+      const dateStr=result.rocDateStr||TODAY_ROC;
+      const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
+      result.lines.forEach(line=>{
+        rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+      });
+    });
+    const ws=XLSX.utils.aoa_to_sheet(rows);
+    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+    XLSX.writeFile(wb, `房管屋主出款_${fileDate}_${page+1}.xlsx`);
+  }
 
   clearErr("fang-owner-err");
 });

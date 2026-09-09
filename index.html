@@ -1425,6 +1425,66 @@ function liChong(acctCode){
   const Y_CODES=["2205-01","2205-02","2205-03","131450-01","1130","2205-031","2910-01"];
   return Y_CODES.includes(acctCode)?"Y":"N";
 }
+
+/* ══════════════════════════════════════
+   傳票累積檔新格式（49欄，對應公司M化系統的正式匯入格式）
+   我們實際會填值的只有9欄：年度/傳票號碼/傳票種類/日期/科目代號/客戶供應商代號/借貸/金額/長摘要，
+   其餘40欄都是這個格式裡有、但我們目前用不到的欄位——保留欄位結構完整，只是視覺上隱藏起來，
+   之後如果哪個欄位真的需要填值，再取消隱藏、把值填進去即可。
+   舊格式的「立沖否」不是真正的公司格式欄位，只是之前用來輔助溝通哪些列要立帳，
+   實際立帳邏輯本來就是直接抓科目代號判斷、不會去讀這欄的值，所以新格式直接拿掉這欄。
+══════════════════════════════════════ */
+const VOUCHER49_HEADERS=["年度","傳票號碼","傳票種類","日期","外幣代號","匯率","轉B帳註記","唯一流水號(主檔 )","序號","科目代號","客戶供應商代號","摘要","借/貸","金額","部門編號","專案編號 ","工程項目序號","收據","分攤|調整註記","列印註記","原傳票號碼","外幣金額","長摘要","主檔自定義欄位一","主檔自定義欄位二","主檔自定義欄位三","主檔自定義欄位四","主檔自定義欄位五","主檔自定義欄位六","主檔自定義欄位七","主檔自定義欄位八","主檔自定義欄位九","主檔自定義欄位十","主檔自定義欄位十一","主檔自定義欄位十二","明細自定義欄位一","明細自定義欄位二","明細自定義欄位三","明細自定義欄位四","明細自定義欄位五","明細自定義欄位六","明細自定義欄位七","明細自定義欄位八","明細自定義欄位九","明細自定義欄位十","明細自定義欄位十一","明細自定義欄位十二","來源別","來源單號"];
+// 這9個欄位是我們實際會填值的，其餘欄位輸出時一律留空、並且隱藏
+const VOUCHER49_VISIBLE_INDEXES=[0,1,2,3,9,10,12,13,22];
+
+// 把舊的簡易列格式 [年度,傳票號碼,傳票種類,日期,科目代號,客戶供應商代號,借貸,金額,長摘要,部門編號,(立沖否，忽略不用)]
+// 轉成新的49欄格式，其餘欄位留空。
+function toVoucher49Row(oldRow){
+  const[year,vno,vtype,date,acctCode,custCode,dc,amount,longSummary]=oldRow;
+  const row=new Array(VOUCHER49_HEADERS.length).fill("");
+  row[0]=year; row[1]=vno; row[2]=vtype; row[3]=date;
+  row[9]=acctCode; row[10]=custCode||"";
+  row[12]=dc; row[13]=amount;
+  row[22]=longSummary;
+  return row;
+}
+
+// 建立傳票累積檔worksheet：資料統一先轉成49欄格式，再把用不到的欄位隱藏起來
+// （隱藏是Excel的欄位隱藏功能，不是刪除，檔案裡欄位還是完整存在）。
+function buildVoucher49Sheet(oldRows){
+  const rows49=oldRows.map(toVoucher49Row);
+  const ws=XLSX.utils.aoa_to_sheet([VOUCHER49_HEADERS, ...rows49]);
+  const cols=VOUCHER49_HEADERS.map((h,i)=>{
+    const visible=VOUCHER49_VISIBLE_INDEXES.includes(i);
+    return visible?{wch:h==="長摘要"?50:14}:{wch:14,hidden:true};
+  });
+  ws["!cols"]=cols;
+  return ws;
+}
+
+/* ══════════════════════════════════════
+   立帳檔新格式（13欄，對應公司M化系統的正式匯入格式）
+   立帳檔全部欄位都要顯示、不用隱藏（跟傳票累積檔那份不一樣）。
+   新增的幾個欄位規則（第一次立帳，還沒有任何沖帳動作發生過）：
+     沖帳金額＝0（還沒有任何一筆拿去沖帳）
+     餘額＝立帳金額（全部都還沒被沖掉，所以餘額等於原始立帳金額）
+     結清否＝N（還沒結清）
+     專案\項目編號＝留空
+══════════════════════════════════════ */
+const LIZHANG13_HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","沖帳金額","餘額","結清否","備註(30C)","部門\\ 工地編號","專案\\ 項目編號"];
+
+// outRowsOld: 每一列是舊的9欄格式 [立帳單號,科目代號,立帳日期,客戶供應商代號,立帳傳票號碼,傳票序號,立帳金額,備註(30C),部門\工地編號]
+function buildLizhang13Sheet(outRowsOld){
+  const rows13=outRowsOld.map(r=>{
+    const[lizhangNo,acctCode,date,custCode,voucherNo,seqNo,amount,note,dept]=r;
+    return[lizhangNo,acctCode,date,custCode,voucherNo,seqNo,amount,0,amount,"N",note,dept||"",""];
+  });
+  const ws=XLSX.utils.aoa_to_sheet([LIZHANG13_HEADERS, ...rows13]);
+  ws["!cols"]=[{wch:16},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:8},{wch:32},{wch:12},{wch:12}];
+  return ws;
+}
+
 function todayRoc(){
   const d=new Date();
   const y=d.getFullYear()-1911;
@@ -2627,8 +2687,7 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
           liChong(line.acctCode||"")]);
       });
     });
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:40}];
+    const ws=buildVoucher49Sheet(rows.slice(1));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     // 檔名：收入_傳票匯入_115-07-08.xlsx
@@ -2636,6 +2695,8 @@ document.getElementById("fang-btn-voucher").addEventListener("click",()=>{
     XLSX.writeFile(wb,`收入_傳票匯入_${fileDate}.xlsx`);
 
     // 存下這個日期的傳票明細列（不含表頭），index+1 就是「序號」（第1列=0001）
+    // 這裡維持原本的簡易格式(不是49欄)，因為立帳功能是靠陣列位置(r[4]=科目代號等)去讀取，
+    // 49欄格式只在輸出Excel檔案時才轉換，不影響內部資料的存取方式。
     fangVoucherBatches.set(dateStr, rows.slice(1));
   });
 
@@ -2732,9 +2793,7 @@ document.getElementById("fang-btn-lizhang").addEventListener("click",()=>{
     if(!outRows.length) return;
     seqMap[dateStr]=seqInFile; // 記住這個日期這次用到哪個序號，下次同一個日期會接續
     anyOutput=true;
-    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
-    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const ws=buildLizhang13Sheet(outRows);
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
     const fileDate=dateStr.replace(/\//g,"-");
@@ -3689,7 +3748,6 @@ document.getElementById("fang-refund-btn-voucher").addEventListener("click",()=>
     return;
   }
 
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   // 依日期分組，組內維持前面已經排好的金流表順序（Map會保留insertion順序）
   const byDate=new Map();
   okList.forEach(({row,result})=>{
@@ -3699,14 +3757,12 @@ document.getElementById("fang-refund-btn-voucher").addEventListener("click",()=>
       byDate.get(dateStr).push([
         row.rocYear||115, "DEFAULT", 3, dateStr,
         line.acctCode, line.custCode||"", line.dc, line.amount, line.summary,
-        line.deptNo||"", line.liChongOverride||liChong(line.acctCode),
       ]);
     });
   });
 
   [...byDate.keys()].sort().forEach(dateStr=>{
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const ws=buildVoucher49Sheet(byDate.get(dateStr));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     const dateSafe=dateStr.replace(/\//g,"-");
@@ -4304,7 +4360,6 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   // 順序照金流表排（cfIndex），對不到金流表的用估計位置排、但一樣用同一批的統一出款日期。
   // 每個檔案的房源數量可以自訂（預設13筆，對應銀行整批轉帳明細一頁的筆數），
   // 這樣傳票檔案的分頁方式就能跟銀行匯款明細的分頁對得起來，方便逐頁核對。
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
   const okResults=results.filter(r=>r.result.ok); // 這個房源在金流表裡完全找不到的，已判定不產生分錄，下載時排除
 
   const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
@@ -4323,16 +4378,15 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   const totalPages=Math.ceil(okResults.length/pageSizeInput);
   for(let page=0; page<totalPages; page++){
     const pageResults=okResults.slice(page*pageSizeInput, (page+1)*pageSizeInput);
-    const rows=[HEADERS];
+    const rows=[];
     pageResults.forEach(({group,result})=>{
       const dateStr=result.rocDateStr||TODAY_ROC;
       const rocYear=dateStr?parseInt(dateStr.split("/")[0])||115:115;
       result.lines.forEach(line=>{
-        rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+        rows.push([rocYear,"DEFAULT",3,dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary]);
       });
     });
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const ws=buildVoucher49Sheet(rows);
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     XLSX.writeFile(wb, `房管屋主出款_${fileDate}_${page+1}.xlsx`);
@@ -4605,8 +4659,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
       });
     });
 
-    const ws=XLSX.utils.aoa_to_sheet(rows);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10}];
+    const ws=buildVoucher49Sheet(rows.slice(1));
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
     allRowsFlat.push(...rows.slice(1)); // 去掉表頭，收集這個工作頁產出的傳票列
   });
@@ -4812,9 +4865,7 @@ document.getElementById("fang-pay-btn-lizhang").addEventListener("click",()=>{
 
     if(!outRows.length) return;
     anyOutput=true;
-    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
-    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const ws=buildLizhang13Sheet(outRows);
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
     XLSX.writeFile(wb, `立帳檔_支出_${fileKey}.xlsx`);
@@ -5536,8 +5587,7 @@ document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
   });
 
   // 產出單一 Excel 檔案
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10}];
+  const ws=buildVoucher49Sheet(rows.slice(1));
   const wb_out=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
   const today=TODAY_ROC.replace(/\//g,"-");
@@ -6173,8 +6223,7 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
   });
   const dates=[...groups.keys()].sort();
   dates.forEach(date=>{
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...groups.get(date)]);
-    ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+    const ws=buildVoucher49Sheet(groups.get(date));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     const dateSafe=String(date).replace(/\//g,"-");
@@ -6351,8 +6400,7 @@ if(_fangInvDownloadBtn) _fangInvDownloadBtn.addEventListener("click",()=>{
     rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr,
       "2290",inv.custCode,2,inv.tax,s2]);
   });
-  const ws=XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:40}];
+  const ws=buildVoucher49Sheet(rows.slice(1));
   const wb=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
   XLSX.writeFile(wb,"傳票匯入_房管處電子發票_"+new Date().toISOString().slice(0,10)+".xlsx");
@@ -7656,9 +7704,6 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     return;
   }
 
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const COLS=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
-
   // 一個傳票只會有一個日期，所以依日期切開，各自下載成獨立的傳票檔案，
   // 不會把不同日期的分錄混在同一份檔案裡（13658 收房客租金、14432 付屋主都適用這個規則）。
   // 同時把每個檔案登記進sheVoucherBatches，供社宅立帳功能使用（跟房管立帳同一套邏輯：
@@ -7672,8 +7717,7 @@ document.getElementById("she-btn-voucher").addEventListener("click",()=>{
     });
     const dates=[...groups.keys()].sort();
     dates.forEach(date=>{
-      const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...groups.get(date)]);
-      ws["!cols"]=COLS;
+      const ws=buildVoucher49Sheet(groups.get(date));
       const wb=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "傳票");
       const dateSafe=String(date).replace(/\//g,"-");
@@ -7877,19 +7921,16 @@ document.getElementById("she-cf2-btn-voucher").addEventListener("click",()=>{
     showErr("she-cf2-err","目前沒有可以產生分錄的資料");
     return;
   }
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const COLS=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
   const byDate=new Map();
   okList.forEach(r=>{
     const roc=r.dateStr.split("/").map(Number);
     if(!byDate.has(r.dateStr)) byDate.set(r.dateStr,[]);
     r.lines.forEach(line=>{
-      byDate.get(r.dateStr).push([roc[0],"DEFAULT",3,r.dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",liChong(line.acctCode)]);
+      byDate.get(r.dateStr).push([roc[0],"DEFAULT",3,r.dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary]);
     });
   });
   [...byDate.keys()].sort().forEach(dateStr=>{
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
-    ws["!cols"]=COLS;
+    const ws=buildVoucher49Sheet(byDate.get(dateStr));
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "傳票");
     const dateSafe=dateStr.replace(/\//g,"-");
@@ -7968,9 +8009,7 @@ document.getElementById("she-btn-lizhang").addEventListener("click",()=>{
 
     if(!outRows.length) return;
     anyOutput=true;
-    const HEADERS=["立帳單號 ","科目代號","立帳日期 ","客戶供應商代號 ","立帳傳票號碼 ","傳票序號","立帳金額 ","備註(30C)","部門\\ 工地編號"];
-    const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...outRows]);
-    ws["!cols"]=[{wch:14},{wch:10},{wch:12},{wch:14},{wch:14},{wch:10},{wch:10},{wch:32},{wch:12}];
+    const ws=buildLizhang13Sheet(outRows);
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
     XLSX.writeFile(wb, `立帳檔_社宅_${fileKey}.xlsx`);

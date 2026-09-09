@@ -4765,8 +4765,7 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
       byDate.get(d).push(r);
     });
     [...byDate.keys()].sort().forEach(dateStr=>{
-      const ws=XLSX.utils.aoa_to_sheet([HEADERS, ...byDate.get(dateStr)]);
-      ws["!cols"]=[{wch:8},{wch:12},{wch:10},{wch:14},{wch:14},{wch:16},{wch:6},{wch:10},{wch:50},{wch:10},{wch:8}];
+      const ws=buildVoucher49Sheet(byDate.get(dateStr));
       const wbOut=XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wbOut,ws,"傳票累積檔");
       const dateSafe=String(dateStr).replace(/\//g,"-");
@@ -7565,6 +7564,9 @@ function sheBuildVoucherRows(targetYm){
   const firstDateStr=`${rocYear}/${pad2(tm)}/01`;
   const rocYm=sheRocYM(targetYm);
 
+  // 社宅所有分錄的客戶供應商代號統一都是這個
+  const SHE_CUST_CODE="53939912";
+
   // ══ 區塊一：收房客租金（13658帳戶）── 照網銀金流表房客實際入帳的順序 ══
   // 傳票要跟著金流表走：金流表這次有幾筆入帳，傳票就該有幾筆，不能因為「應繳月份」剛好不是
   // 目前選的這個月份，就把這筆從傳票裡排除掉（例如房客補繳上個月房租，這筆帳還是要記進當天的傳票）。
@@ -7596,21 +7598,32 @@ function sheBuildVoucherRows(targetYm){
     // 摘要用這一筆自己實際的應繳月份（item.due.ym），不是targetYm——
     // 這樣就算是補繳其他月份的房租，摘要也會正確顯示是哪個月的租金，不會被誤標成目標月份。
     const itemRocYm=sheRocYM(item.due.ym);
-
-    if(paidDateKey>firstOfMonthKey){
-      warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），這種「沖銷公司墊款」的分錄尚未確認過，請人工處理`);
-      return;
-    }
-
     const recvDateStr=rocStr(paidDateKey);
-    if(!needsInsurance){
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","Y"]);
+
+    if(paidDateKey<=firstOfMonthKey){
+      // 情境1：1號前房客已經繳了——不管租金有沒有超過健保門檻，都是全額進2205-01代收款，
+      // 這時候還不用管健保代扣的事（健保代扣是等1號沖帳/或事後才繳時才會產生的另一筆帳），
+      // 這一筆2205-01是「新產生的代收」，要立帳。
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04",SHE_CUST_CODE,1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
+      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01",SHE_CUST_CODE,2,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","Y"]);
     }else{
-      const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04","",1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01","",2,receivedAmt-insurance,`${addrLabel}-${itemRocYm}租金-屋主${landlord}`,"","Y"]);
-      receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${itemRocYm}租金-屋主${landlord})`,"","Y"]);
+      // 情境3：1號之後房客才繳（1號當天公司已經先用131450-01代墊給屋主了），
+      // 這筆房客繳的錢，要拿去沖掉當初代墊的131450-01（沖帳，不立帳），
+      // 如果租金超過健保門檻，代墊的131450-01金額當初就是「租金-健保」，所以沖帳金額也是「租金-健保」，
+      // 差額（健保費）另外產生一筆2205-01給凌群代扣，這筆是全新產生的代收，要立帳。
+      if(!landlord){
+        warnings.push(`「${tenant.name}」（${addrLabel}）於 1 號之後才繳款（${rocStr(paidDateKey)}），但在屋主匯款順序清單裡找不到對應的屋主資訊，無法確認代墊金額，這筆需要人工處理`);
+        return;
+      }
+      if(!needsInsurance){
+        receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04",SHE_CUST_CODE,1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
+        receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01",SHE_CUST_CODE,2,receivedAmt,`${addrLabel}-${itemRocYm}租金-屋主${landlord}`,"","N"]);
+      }else{
+        const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
+        receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"1110-04",SHE_CUST_CODE,1,receivedAmt,`${addrLabel}-${itemRocYm}租金-${tenantName}`,"","N"]);
+        receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"131450-01",SHE_CUST_CODE,2,receivedAmt-insurance,`${addrLabel}-${itemRocYm}租金-屋主${landlord}`,"","N"]);
+        receiveRows.push([recvRocYear,"DEFAULT",3,recvDateStr,"2205-01",SHE_CUST_CODE,2,insurance,`凌群-代扣(${addrLabel}-${itemRocYm}租金-屋主${landlord})`,"","Y"]);
+      }
     }
   });
 
@@ -7655,24 +7668,24 @@ function sheBuildVoucherRows(targetYm){
         return;
       }
 
-      // 1號付屋主（房客已先繳，可能是今天上傳看到的、也可能是累積記錄裡更早的某一天）
+      // 情境4：1號當天出款，房客早就繳過了（1號前就進了2205-01代收款）——
+      // 這筆要拿之前收的代收款沖掉（借方2205-01，沖帳，不立帳），貸方付給屋主，
+      // 如果超過健保門檻，貸方拆成「屋主實拿」＋「凌群代扣」兩筆，凌群代扣是全新產生的代收，要立帳。
       if(!needsInsurance){
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01",SHE_CUST_CODE,1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01",SHE_CUST_CODE,2,receivedAmt,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
       }else{
         const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","Y"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
-        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01","",2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01",SHE_CUST_CODE,1,receivedAmt,`${addrLabel}-${rocYm}租金-${tenantName}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01",SHE_CUST_CODE,2,receivedAmt-insurance,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
+        payRows.push([rocYear,"DEFAULT",3,firstDateStr,"2205-01",SHE_CUST_CODE,2,insurance,`凌群-代扣(${addrLabel}-${rocYm}租金-屋主${landlord})`,"","Y"]);
       }
     }else{
-      // 房客到1號還沒繳（這次上傳、累積帳本都查不到），公司墊付
-      if(needsInsurance){
-        warnings.push(`「${tenant.name}」（${addrLabel}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但截至 ${rocYm} 這期還沒收到房客租金——「要扣健保＋公司墊付」這種組合目前沒有實際案例可依循分錄，請人工處理`);
-        return;
-      }
-      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01","",1,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
-      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01","",2,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
+      // 情境2：房客到1號還沒繳（這次上傳、累積帳本都查不到），公司先代墊給屋主——
+      // 不管有沒有超過健保門檻，都是全額代墊（健保的事等房客事後真的繳了、走情境3時才處理），
+      // 這筆131450-01是全新產生的代墊款，要立帳。
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"131450-01",SHE_CUST_CODE,1,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","Y"]);
+      payRows.push([rocYear,"DEFAULT",3,firstDateStr,"1110-01",SHE_CUST_CODE,2,tenant.rent,`${addrLabel}-${rocYm}租金-屋主${landlord}`,"","N"]);
     }
   });
 
@@ -7808,23 +7821,14 @@ function sheCf2Rebuild(){
     if(!tenant){
       return{...row, ok:false, reason:`地址「${parsed.addr}」在房客資料庫裡查不到對應的資料，請人工確認`};
     }
-    const needsInsurance=tenant.rent>=SHE_INSURANCE_THRESHOLD;
-    const o=SHE_LANDLORD_BY_TENANT[tenant.id];
-    if(needsInsurance && !o){
-      return{...row, ok:false, reason:`「${tenant.name}」（${parsed.addr}）租金 ${fmtMoney(tenant.rent)} ≥ 20,000 需扣二代健保，但在屋主匯款順序清單裡找不到對應的屋主資訊，需人工補上屋主姓名`};
-    }
-    const lines=[];
+    // 這條路線只處理「收房客租金」（情境1：1號前房客已繳），不管租金有沒有超過健保門檻，
+    // 都是全額進2205-01代收款（要立帳），健保代扣的事留到1號沖帳/或事後才繳時才處理，
+    // 客戶供應商代號統一是53939912。
     const summaryBase=`${parsed.addr}-${parsed.rocYm}租金-${parsed.names}`;
-    if(!needsInsurance){
-      lines.push({acctCode:"1110-04", custCode:"", dc:1, amount:row.amount, summary:summaryBase});
-      lines.push({acctCode:"2205-01", custCode:"", dc:2, amount:row.amount, summary:summaryBase});
-    }else{
-      const insurance=Math.round(tenant.rent*SHE_INSURANCE_RATE);
-      const landlord=o.landlord;
-      lines.push({acctCode:"1110-04", custCode:"", dc:1, amount:row.amount, summary:summaryBase});
-      lines.push({acctCode:"131450-01", custCode:"", dc:2, amount:row.amount-insurance, summary:`${parsed.addr}-${parsed.rocYm}租金-屋主${landlord}`});
-      lines.push({acctCode:"2205-01", custCode:"", dc:2, amount:insurance, summary:`凌群-代扣(${parsed.addr}-${parsed.rocYm}租金-屋主${landlord})`});
-    }
+    const lines=[
+      {acctCode:"1110-04", custCode:"53939912", dc:1, amount:row.amount, summary:summaryBase, lizhang:"N"},
+      {acctCode:"2205-01", custCode:"53939912", dc:2, amount:row.amount, summary:summaryBase, lizhang:"Y"},
+    ];
     return{...row, ok:true, lines};
   });
   sheCf2State.results=results;
@@ -7926,7 +7930,7 @@ document.getElementById("she-cf2-btn-voucher").addEventListener("click",()=>{
     const roc=r.dateStr.split("/").map(Number);
     if(!byDate.has(r.dateStr)) byDate.set(r.dateStr,[]);
     r.lines.forEach(line=>{
-      byDate.get(r.dateStr).push([roc[0],"DEFAULT",3,r.dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary]);
+      byDate.get(r.dateStr).push([roc[0],"DEFAULT",3,r.dateStr,line.acctCode,line.custCode||"",line.dc,line.amount,line.summary,"",line.lizhang||"N"]);
     });
   });
   [...byDate.keys()].sort().forEach(dateStr=>{
@@ -7981,7 +7985,6 @@ document.getElementById("she-btn-lizhang").addEventListener("click",()=>{
     return;
   }
 
-  const LIZHANG_CODES_SHE=["131450-01"];
   // 序號記錄跟房管共用同一份（FANG_LIZHANG_SEQ_KEY），確保同一天不管哪個部門的立帳都不會撞號。
   const seqMap=fangLoadLizhangSeqMap();
   let anyOutput=false;
@@ -7994,7 +7997,10 @@ document.getElementById("she-btn-lizhang").addEventListener("click",()=>{
     const outRows=[];
     voucherRows.forEach((r,idx)=>{
       const acctCode=r[4];
-      if(!LIZHANG_CODES_SHE.includes(acctCode)) return;
+      // 立帳與否要看這一行本身在產生分錄時就標記好的Y/N旗標(r[10])，不能只看科目代號——
+      // 因為社宅的2205-01、131450-01這兩個科目，同一個代號可能是「新產生的代收/代墊」(要立帳)，
+      // 也可能是「沖掉之前立過的帳」(不立帳)，方向不同意義完全不一樣，已經在產生分錄的當下就判斷清楚了。
+      if(r[10]!=="Y") return;
       const rowDate=r[3]; // 這一列本身的交易日期，序號記錄用這個當key
       const seqInFile=(seqMap[rowDate]||1000)+1;
       seqMap[rowDate]=seqInFile;
@@ -8016,7 +8022,7 @@ document.getElementById("she-btn-lizhang").addEventListener("click",()=>{
   });
 
   if(!anyOutput){
-    showErr("she-lizhang-err","填的這些檔案裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
+    showErr("she-lizhang-err","填的這些檔案裡，沒有任何一列需要立帳，沒有東西可以產生立帳檔");
   }else{
     fangSaveLizhangSeqMap(seqMap);
     clearErr("she-lizhang-err");

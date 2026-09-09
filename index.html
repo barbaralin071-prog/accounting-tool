@@ -3141,11 +3141,31 @@ function parseExpenseCashflowXlsx(data){
     const headers=aoa[hi];
     // 說明欄：找「說明」，找不到就用 col 1（金流表說明通常在第二欄）
     const iDescByName=headers.findIndex(h=>h==="說明");
-    const iDesc=iDescByName>=0?iDescByName:1;
-    const iOrderNo=headers.findIndex(h=>h==="單號");
+    let iDesc=iDescByName>=0?iDescByName:1;
+    let iOrderNo=headers.findIndex(h=>h==="單號");
     const iExpense=headers.findIndex(h=>h==="支出");
     const iFee=headers.findIndex(h=>h==="匯費");
     const iDeptNo=headers.findIndex(h=>h==="部門編號");
+
+    // 保險機制：有些金流表的標題列本身欄位沒對齊實際資料（例如標題「說明」那一格，
+    // 底下實際放的其實是單號、真正的說明反而在左邊那一欄，而且標題列可能根本沒有「單號」這個標題）。
+    // 用前幾筆實際資料驗證一下：如果「說明」欄位抓到的內容，看起來就是單號格式
+    // （例如「代租請-20260825-002」這種開頭是固定詞＋日期＋序號的樣式），
+    // 而它左邊那一欄的內容看起來更像一般的說明文字，就自動往左移一欄，
+    // 改抓左邊那一欄當作真正的說明欄位，原本「說明」標題所在的位置改當作單號欄位。
+    if(iDesc>0){
+      const sampleRows=aoa.slice(hi+1, hi+6).filter(r=>r&&r[iDesc]!=null);
+      const looksLikeOrderNo=v=>/^[\u4e00-\u9fa5]+請?-\d{6,8}-\d+$/.test(String(v).trim());
+      const mostlyOrderNo=sampleRows.length>0 && sampleRows.every(r=>looksLikeOrderNo(r[iDesc]));
+      if(mostlyOrderNo){
+        const leftCol=iDesc-1;
+        const leftLooksLikeDesc=sampleRows.some(r=>r[leftCol]!=null && !looksLikeOrderNo(r[leftCol]) && String(r[leftCol]).length>3);
+        if(leftLooksLikeDesc){
+          if(iOrderNo<0) iOrderNo=iDesc; // 原本「說明」標題的位置，其實是單號資料
+          iDesc=leftCol;
+        }
+      }
+    }
 
     // 找日期欄（col 0）
     const iDate=0;

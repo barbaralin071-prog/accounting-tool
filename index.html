@@ -243,6 +243,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
   <button class="tab active" data-tab="fang">🏠 房管處</button>
   <button class="tab" data-tab="biz">💼 業務處</button>
   <button class="tab" data-tab="she">🏘️ 社宅</button>
+  <button class="tab" data-tab="st">🏨 短租處</button>
   <button class="tab" data-tab="lottery">🎫 發票對獎</button>
 </div>
 
@@ -529,77 +530,33 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
-  <!-- ── 短租退款傳票（依退款單原文解析，不透過支出金流表）── -->
-  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+  <!-- ══════════════════════════════════════════
+       支出傳票轉換（房管退款、房管屋主出款）
+  ════════════════════════════════════════════ -->
+  <div style="font-size:15px;font-weight:700;padding:4px 0 12px;border-top:2px solid var(--border);border-bottom:2px solid var(--border);margin:28px 0 16px;">
+    💸 支出傳票轉換
+  </div>
+
+  <!-- ── 房管退款傳票（從上方「支出請款比對」確認後的支出金流表，抓出退押金_房管這個分類）── -->
+  <div>
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
-      🏠 短租退款傳票
+      🏠 房管退款傳票
     </div>
     <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
-      直接上傳退款單原始檔案（不是支出金流表），因為短租的電費/代收電費細節只有退款單的「此筆請款備註」裡才有，
-      支出金流表的說明文字已經是簡化過的、沒有這些細節。年租管理維持原本押金退款打法；短租管理依包租/合作拆帳分開處理。
-      另外可以選填上傳「對應的支出金流表」，工具會用「日期＋金額」把退款單裡的每一筆對回金流表上的位置，
-      輸出的傳票就會照金流表原本的順序排列（不上傳的話，就照退款單原始上傳的順序）。
-      <strong>短租＋包租的案例，因為電費要記銷項稅額（2290），需要一張實際開立的電子發票才能記帳，
-      所以也要上傳「電子發票」檔案，工具會用金額去對應到哪一張發票、把發票號碼帶進傳票摘要；
-      對不到發票的那幾筆，不會硬產生分錄，會標記人工處理。</strong>
+      上傳上方「支出請款比對」確認後的支出金流表，只會抓出裡面屬於「房管退押金」的部分，各自依交易日期產出獨立傳票檔案。
     </div>
     <div class="card">
-      <div style="display:flex;gap:16px;flex-wrap:wrap;">
-        <div>
-          <div class="dropzone" id="fang-refund-dz-file" style="max-width:320px;">
-            <div class="dz-icon">📄</div>
-            <div class="dz-label">上傳退款單</div>
-            <div class="dz-hint">退款單.xlsx</div>
-          </div>
-          <input type="file" id="fang-refund-file" accept=".xlsx" hidden>
+      <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
+        <div class="dropzone" id="fang-refund2-dz-cashflow" style="max-width:400px;">
+          <div class="dz-icon">📊</div>
+          <div class="dz-label">上傳確認後的支出金流表</div>
+          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
         </div>
-        <div>
-          <div class="dropzone" id="fang-refund-dz-cashflow" style="max-width:320px;">
-            <div class="dz-icon">📊</div>
-            <div class="dz-label">上傳對應的支出金流表（選填，用於排序）</div>
-            <div class="dz-hint">支出金流表.xlsx</div>
-          </div>
-          <input type="file" id="fang-refund-file-cashflow" accept=".xlsx" hidden>
-        </div>
-        <div>
-          <div class="dropzone" id="fang-refund-dz-invoice" style="max-width:320px;">
-            <div class="dz-icon">🧾</div>
-            <div class="dz-label">上傳電子發票（短租電費需要）</div>
-            <div class="dz-hint">電子發票開立.xlsx</div>
-          </div>
-          <input type="file" id="fang-refund-file-invoice" accept=".xlsx" hidden>
-        </div>
-      </div>
-      <div class="errbox" id="fang-refund-err"></div>
-      <div id="fang-refund-result" style="display:none;margin-top:14px;">
-        <div id="fang-refund-consistency" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fff3f0;border:1px solid #f5b8a8;border-radius:8px;">
-          <div style="font-size:13px;font-weight:700;color:#c0392b;margin-bottom:8px;">⚠ 一致性檢查</div>
-          <div id="fang-refund-consistency-body" style="font-size:12.5px;color:#7a2e1f;line-height:1.7;"></div>
-        </div>
-        <div class="match-summary" style="grid-template-columns:repeat(3,1fr);">
-          <div class="ms-cell ok">
-            <div class="ms-num" id="fang-refund-cnt-ok">0</div>
-            <div class="ms-lbl">✓ 可自動產生分錄</div>
-          </div>
-          <div class="ms-cell warn">
-            <div class="ms-num" id="fang-refund-cnt-review">0</div>
-            <div class="ms-lbl">🔎 已產生但需查核</div>
-          </div>
-          <div class="ms-cell warn">
-            <div class="ms-num" id="fang-refund-cnt-manual">0</div>
-            <div class="ms-lbl">⚠ 需人工處理（未產生）</div>
-          </div>
-        </div>
-        <div class="tbl-wrap" style="margin-top:10px;">
-          <table>
-            <thead><tr>
-              <th>#</th><th>退款部門</th><th>此筆請款備註</th><th class="right">總金額</th><th>排序</th><th>狀態</th>
-            </tr></thead>
-            <tbody id="fang-refund-tb"></tbody>
-          </table>
-        </div>
-        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          <button class="btn primary" id="fang-refund-btn-voucher">下載短租退款傳票</button>
+        <input type="file" id="fang-refund2-file-cashflow" accept=".xlsx" hidden>
+        <div class="errbox" id="fang-refund2-err"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <div id="fang-refund2-status" style="font-size:13px;color:var(--ink-soft);">上傳後自動篩選出房管退押金部分</div>
+          <button class="btn primary" id="fang-refund2-btn-voucher" disabled>下載房管退款傳票</button>
         </div>
       </div>
     </div>
@@ -675,90 +632,6 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
-  <!-- ── 出款後開立電子發票 ── -->
-  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
-    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
-      🔄 出款後開立電子發票
-    </div>
-    <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
-      會計：上傳金流表＋收入傳票＋支出傳票＋電子發票 → 下載沖帳傳票
-    </div>
-    <div class="card">
-      <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
-        <div class="upload-row" style="grid-template-columns:1fr 1fr;">
-          <div>
-            <div class="dropzone" id="fang-3rd-dz-cashflow">
-              <div class="dz-icon">📊</div>
-              <div class="dz-label">上傳金流表</div>
-              <div class="dz-hint">金流表_房管處_YYYY-MM-DD.xlsx</div>
-            </div>
-            <input type="file" id="fang-3rd-file-cashflow" accept=".xlsx" hidden>
-          </div>
-          <div>
-            <div class="dropzone" id="fang-3rd-dz-income">
-              <div class="dz-icon">📥</div>
-              <div class="dz-label">上傳收入傳票檔</div>
-              <div class="dz-hint">可選多份，傳票匯入_房管處_YYYY-MM-DD.xlsx</div>
-            </div>
-            <input type="file" id="fang-3rd-file-income" accept=".xlsx" multiple hidden>
-          </div>
-        </div>
-        <div class="upload-row" style="grid-template-columns:1fr 1fr;margin-top:12px;">
-          <div>
-            <div class="dropzone" id="fang-3rd-dz-expense">
-              <div class="dz-icon">📤</div>
-              <div class="dz-label">上傳支出傳票檔</div>
-              <div class="dz-hint">可選多份，傳票匯入_支出_YYYY-MM-DD.xlsx（選填）</div>
-            </div>
-            <input type="file" id="fang-3rd-file-expense" accept=".xlsx" multiple hidden>
-          </div>
-          <div>
-            <div class="dropzone" id="fang-3rd-dz-invoice">
-              <div class="dz-icon">🧾</div>
-              <div class="dz-label">上傳電子發票</div>
-              <div class="dz-hint">電子發票開立_XXXX.xlsx（選填）</div>
-            </div>
-            <input type="file" id="fang-3rd-file-invoice" accept=".xlsx" hidden>
-          </div>
-        </div>
-        <div class="errbox" id="fang-3rd-err"></div>
-        <div style="display:flex;justify-content:flex-end;margin-top:8px;">
-          <button class="btn primary" id="fang-3rd-btn-download-top" disabled>下載沖帳傳票匯入檔</button>
-        </div>
-      </div>
-
-      <!-- 比對結果預覽 -->
-      <div id="fang-3rd-result" hidden>
-        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 18px;border-bottom:1px solid var(--border);cursor:pointer;"
-          onclick="const tb=document.getElementById('fang-3rd-tb-wrap');const icon=document.getElementById('fang-3rd-toggle');tb.hidden=!tb.hidden;icon.textContent=tb.hidden?'▶':'▼';">
-          <div style="font-size:13px;font-weight:600;">
-            <span id="fang-3rd-toggle">▶</span>
-            　明細預覽（點擊收合／展開）
-          </div>
-          <div id="fang-3rd-summary-line" style="font-size:12.5px;color:var(--ink-soft);"></div>
-        </div>
-        <div id="fang-3rd-tb-wrap" hidden>
-          <div class="tbl-wrap">
-            <table>
-              <thead><tr>
-                <th>#</th><th>房源</th><th>屋主支出</th>
-                <th>收入傳票筆數</th><th>支出傳票筆數</th><th>電子發票</th><th>狀態</th>
-              </tr></thead>
-              <tbody id="fang-3rd-tb"></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div class="actbar">
-        <div class="bal" id="fang-3rd-bal">—</div>
-        <div class="btns">
-          <button class="btn secondary" id="fang-3rd-btn-reset">重新上傳</button>
-          <button class="btn primary" id="fang-3rd-btn-download" disabled>下載沖帳傳票匯入檔</button>
-        </div>
-      </div>
-    </div>
-  </div>
 
 </div><!-- /panel-fang -->
 
@@ -1197,8 +1070,141 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
     <div class="errbox" id="she-lizhang-err"></div>
   </div>
+  <!-- ── 社宅包租屋主出款傳票（從房管處確認後的支出金流表，抓出社宅包租屋主出款這個分類）── -->
+  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      💸 社宅包租屋主出款傳票
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      上傳「房管處」分頁「支出請款比對」確認後的支出金流表，只會抓出裡面屬於「社宅包租屋主出款」的部分，各自依交易日期產出獨立傳票檔案。
+    </div>
+    <div class="card">
+      <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
+        <div class="dropzone" id="she-expense-dz-cashflow" style="max-width:400px;">
+          <div class="dz-icon">📊</div>
+          <div class="dz-label">上傳確認後的支出金流表</div>
+          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+        </div>
+        <input type="file" id="she-expense-file-cashflow" accept=".xlsx" hidden>
+        <div class="errbox" id="she-expense-err"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <div id="she-expense-status" style="font-size:13px;color:var(--ink-soft);">上傳後自動篩選出社宅包租屋主出款部分</div>
+          <button class="btn primary" id="she-expense-btn-voucher" disabled>下載社宅包租屋主出款傳票</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
 </div><!-- /panel-she -->
+
+<!-- ══════════════════════════════════════════
+     短租處 Panel
+════════════════════════════════════════════ -->
+<div class="panel" id="panel-st">
+
+  <!-- ── 短租退款傳票（依退款單原文解析，不透過支出金流表）── -->
+  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      🏠 短租退款傳票
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      直接上傳退款單原始檔案（不是支出金流表），因為短租的電費/代收電費細節只有退款單的「此筆請款備註」裡才有，
+      支出金流表的說明文字已經是簡化過的、沒有這些細節。年租管理維持原本押金退款打法；短租管理依包租/合作拆帳分開處理。
+      另外可以選填上傳「對應的支出金流表」，工具會用「日期＋金額」把退款單裡的每一筆對回金流表上的位置，
+      輸出的傳票就會照金流表原本的順序排列（不上傳的話，就照退款單原始上傳的順序）。
+      <strong>短租＋包租的案例，因為電費要記銷項稅額（2290），需要一張實際開立的電子發票才能記帳，
+      所以也要上傳「電子發票」檔案，工具會用金額去對應到哪一張發票、把發票號碼帶進傳票摘要；
+      對不到發票的那幾筆，不會硬產生分錄，會標記人工處理。</strong>
+    </div>
+    <div class="card">
+      <div style="display:flex;gap:16px;flex-wrap:wrap;">
+        <div>
+          <div class="dropzone" id="fang-refund-dz-file" style="max-width:320px;">
+            <div class="dz-icon">📄</div>
+            <div class="dz-label">上傳退款單</div>
+            <div class="dz-hint">退款單.xlsx</div>
+          </div>
+          <input type="file" id="fang-refund-file" accept=".xlsx" hidden>
+        </div>
+        <div>
+          <div class="dropzone" id="fang-refund-dz-cashflow" style="max-width:320px;">
+            <div class="dz-icon">📊</div>
+            <div class="dz-label">上傳對應的支出金流表（選填，用於排序）</div>
+            <div class="dz-hint">支出金流表.xlsx</div>
+          </div>
+          <input type="file" id="fang-refund-file-cashflow" accept=".xlsx" hidden>
+        </div>
+        <div>
+          <div class="dropzone" id="fang-refund-dz-invoice" style="max-width:320px;">
+            <div class="dz-icon">🧾</div>
+            <div class="dz-label">上傳電子發票（短租電費需要）</div>
+            <div class="dz-hint">電子發票開立.xlsx</div>
+          </div>
+          <input type="file" id="fang-refund-file-invoice" accept=".xlsx" hidden>
+        </div>
+      </div>
+      <div class="errbox" id="fang-refund-err"></div>
+      <div id="fang-refund-result" style="display:none;margin-top:14px;">
+        <div id="fang-refund-consistency" style="display:none;margin-bottom:14px;padding:12px 14px;background:#fff3f0;border:1px solid #f5b8a8;border-radius:8px;">
+          <div style="font-size:13px;font-weight:700;color:#c0392b;margin-bottom:8px;">⚠ 一致性檢查</div>
+          <div id="fang-refund-consistency-body" style="font-size:12.5px;color:#7a2e1f;line-height:1.7;"></div>
+        </div>
+        <div class="match-summary" style="grid-template-columns:repeat(3,1fr);">
+          <div class="ms-cell ok">
+            <div class="ms-num" id="fang-refund-cnt-ok">0</div>
+            <div class="ms-lbl">✓ 可自動產生分錄</div>
+          </div>
+          <div class="ms-cell warn">
+            <div class="ms-num" id="fang-refund-cnt-review">0</div>
+            <div class="ms-lbl">🔎 已產生但需查核</div>
+          </div>
+          <div class="ms-cell warn">
+            <div class="ms-num" id="fang-refund-cnt-manual">0</div>
+            <div class="ms-lbl">⚠ 需人工處理（未產生）</div>
+          </div>
+        </div>
+        <div class="tbl-wrap" style="margin-top:10px;">
+          <table>
+            <thead><tr>
+              <th>#</th><th>退款部門</th><th>此筆請款備註</th><th class="right">總金額</th><th>排序</th><th>狀態</th>
+            </tr></thead>
+            <tbody id="fang-refund-tb"></tbody>
+          </table>
+        </div>
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+          <button class="btn primary" id="fang-refund-btn-voucher">下載短租退款傳票</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <!-- ── 短租支出傳票（從房管處確認後的支出金流表，抓出退押金_短租/全居包租屋主出款/合拆屋主出款這三種分類）── -->
+  <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
+    <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
+      💸 短租支出傳票
+    </div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      上傳「房管處」分頁「支出請款比對」確認後的支出金流表，只會抓出裡面屬於短租處的三種分類（退押金_短租、
+      全居包租屋主出款、合拆屋主出款），各自依交易日期產出獨立傳票檔案。
+      退押金_短租這裡下載的是通用暫時版本，正確的短租退押打法請用上方「短租退款傳票」（上傳退款單＋電子發票）。
+    </div>
+    <div class="card">
+      <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
+        <div class="dropzone" id="st-expense-dz-cashflow" style="max-width:400px;">
+          <div class="dz-icon">📊</div>
+          <div class="dz-label">上傳確認後的支出金流表</div>
+          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+        </div>
+        <input type="file" id="st-expense-file-cashflow" accept=".xlsx" hidden>
+        <div class="errbox" id="st-expense-err"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+          <div id="st-expense-status" style="font-size:13px;color:var(--ink-soft);">上傳後自動篩選出短租處相關的三種分類</div>
+          <button class="btn primary" id="st-expense-btn-voucher" disabled>下載短租支出傳票</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /panel-st -->
 
 <!-- ══════════════════════════════════════════
      發票對獎 Panel
@@ -4600,6 +4606,210 @@ function parseOwnerRentDesc(desc){
   return{houseName,code,ym,ownerName,isMain,isWithhold,is2ndHealth,isFullAddr};
 }
 
+// 分類函式：判斷金流表裡每一列的支出屬於哪一種類型。
+// 「房管屋主出款」已經有自己專屬的流程(上傳代管報表Excel+電子發票+金流表)，這裡不再重複分類，
+// 避免同一批資料被兩條路線各自處理一次、產生兩份不一致的傳票。
+const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
+function classifyRow(row){
+  const orderNo=row.orderNo||"";
+  const desc=row.desc||"";
+  if(desc.includes("退押金")){
+    const houseMatch=matchHousingFromDesc(desc);
+    const rentMode=houseMatch?houseMatch.rentMode:"";
+    return rentMode==="短租管理" ? "退押金_短租" : "退押金_房管";
+  }
+  if(orderNo.includes("月請")){
+    const isFullAddr=CITY_KEYS_V.some(k=>desc.startsWith(k));
+    if(isFullAddr) return "社宅包租屋主出款";
+    return "全居包租屋主出款";
+  }
+  if(orderNo.includes("請")&&desc.includes("屋主")&&desc.includes("租金")) return "合拆屋主出款";
+  return null;
+}
+
+// 核心共用邏輯：把「已經確認的支出金流表」資料，依分類＋交易日期各自產出Excel並下載，
+// 同時把每個檔案登記進傳入的batchesMap（供該部門自己的立帳功能使用）。
+// allowedCategories：這個呼叫端只處理哪些分類（例如房管處只處理"退押金_房管"）。
+function buildAndDownloadExpenseCategoryVouchers(rows, allowedCategories, batchesMap){
+  const fileGroups=new Map();
+  rows.forEach(row=>{
+    const cat=classifyRow(row);
+    if(!cat || !allowedCategories.includes(cat)) return;
+    if(!fileGroups.has(cat)) fileGroups.set(cat,[]);
+    fileGroups.get(cat).push(row);
+  });
+
+  let totalFiles=0;
+  fileGroups.forEach((groupRows,cat)=>{
+    const vRows=[[]]; // 第0列佔位(對應原本的HEADERS)，後面slice(1)拿掉
+
+    const ownerRowsG=groupRows.filter(r=>{
+      const d=r.desc||"";
+      return d.includes("屋主")&&(d.includes("租金")||d.includes("扣繳")||d.includes("二代健保"));
+    });
+    const normalRowsG=groupRows.filter(r=>!ownerRowsG.includes(r));
+
+    const ownerGroupsG=new Map();
+    ownerRowsG.forEach(row=>{
+      const info=parseOwnerRentDesc(row.desc);
+      const key=`${info.houseName}|${info.ym}|${info.ownerName}`;
+      if(!ownerGroupsG.has(key)) ownerGroupsG.set(key,[]);
+      ownerGroupsG.get(key).push({row,info});
+    });
+
+    ownerGroupsG.forEach((items)=>{
+      const main=items.find(i=>i.info.isMain);
+      const withhold=items.find(i=>i.info.isWithhold);
+      const health=items.find(i=>i.info.is2ndHealth);
+      if(!main) return;
+      const{houseName,code,ym,isFullAddr}=main.info;
+      const mainFee=main.row.fee||0;
+      const dateStr=main.row.rocDateStr||TODAY_ROC;
+      const dept=main.row.deptNo||"";
+      if(isFullAddr){
+        const FC="53939912";
+        vRows.push([115,"DEFAULT",3,dateStr,"131450-01",FC,1,main.row.expense,main.row.desc,dept,liChong("131450-01")]);
+        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
+        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",FC,2,main.row.expense+mainFee,main.row.desc,dept,liChong("1110-01")]);
+        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,withhold.row.expense,withhold.row.desc,dept,liChong("131450-01")]);
+        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,health.row.expense,health.row.desc,dept,liChong("131450-01")]);
+      }else{
+        const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0)+(health?.row.expense||0);
+        vRows.push([115,"DEFAULT",3,dateStr,"5990-01",code,1,totalAmt,`${houseName}-${ym}租金`,dept,liChong("5990-01")]);
+        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
+        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",code,2,main.row.expense,main.row.desc,dept,liChong("1110-01")]);
+        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01",code,2,withhold.row.expense,withhold.row.desc,dept,liChong("1110-01")]);
+        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"1110-01",code,2,health.row.expense,health.row.desc,dept,liChong("1110-01")]);
+      }
+    });
+
+    normalRowsG.forEach(row=>{
+      const vLines=buildExpenseVoucherLines(row);
+      vLines.forEach(line=>{
+        vRows.push([115,"DEFAULT",3,row.rocDateStr||TODAY_ROC,
+          line.acctCode,line.custCode,line.dc,line.amount,line.summary,row.deptNo||"",liChong(line.acctCode)]);
+      });
+    });
+
+    const byDate=new Map();
+    vRows.slice(1).forEach(r=>{
+      const d=r[3];
+      if(!byDate.has(d)) byDate.set(d,[]);
+      byDate.get(d).push(r);
+    });
+    [...byDate.keys()].sort().forEach(dateStr=>{
+      const ws=buildVoucher49Sheet(byDate.get(dateStr));
+      const wbOut=XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wbOut,ws,"傳票累積檔");
+      const dateSafe=String(dateStr).replace(/\//g,"-");
+      const fileKey=`${cat}_${dateSafe}`;
+      XLSX.writeFile(wbOut,`${fileKey}.xlsx`);
+      // 「退押金_短租」這裡下載出來的還是用通用公式(131450-01)打的暫時版本，
+      // 不是短租真正的打法（短租要另外上傳退款單＋電子發票，透過「短租退款傳票」那個專屬流程才會產生正確的傳票）。
+      // 所以這個分類不納入立帳批次，避免會計誤把這個暫時版本拿去立帳。
+      if(cat!=="退押金_短租"){
+        batchesMap.set(fileKey, byDate.get(dateStr));
+      }
+      totalFiles++;
+    });
+  });
+  return{fileGroups, totalFiles};
+}
+
+/* ══════════════════════════════════════
+   房管退款傳票：獨立區塊，只抓「退押金_房管」這個分類
+══════════════════════════════════════ */
+let fangRefund2VoucherBatches=new Map();
+let fangRefund2State={rows:[]};
+
+bindDropzone("fang-refund2-dz-cashflow","fang-refund2-file-cashflow",async(file,dz)=>{
+  clearErr("fang-refund2-err");
+  try{
+    const data=await readFile(file);
+    const rows=parseExpenseCashflowXlsx(data);
+    fangRefund2State.rows=rows;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name;
+    const matchCount=rows.filter(r=>classifyRow(r)==="退押金_房管").length;
+    document.getElementById("fang-refund2-status").textContent=
+      matchCount>0 ? `找到 ${matchCount} 筆房管退押金，可以下載傳票` : "這份金流表裡沒有找到房管退押金的資料";
+    document.getElementById("fang-refund2-btn-voucher").disabled=matchCount===0;
+  }catch(e){ showErr("fang-refund2-err",e.message); }
+});
+
+document.getElementById("fang-refund2-btn-voucher").addEventListener("click",()=>{
+  const{totalFiles}=buildAndDownloadExpenseCategoryVouchers(fangRefund2State.rows, ["退押金_房管"], fangRefund2VoucherBatches);
+  if(totalFiles===0){
+    showErr("fang-refund2-err","沒有產生任何檔案");
+  }else{
+    clearErr("fang-refund2-err");
+    document.getElementById("fang-refund2-status").textContent=`✓ 已下載 ${totalFiles} 個傳票檔案`;
+  }
+});
+
+/* ══════════════════════════════════════
+   短租支出傳票：獨立區塊，抓「退押金_短租」「全居包租屋主出款」「合拆屋主出款」三種分類
+══════════════════════════════════════ */
+const ST_EXPENSE_CATS=["退押金_短租","全居包租屋主出款","合拆屋主出款"];
+let stExpenseVoucherBatches=new Map();
+let stExpenseState={rows:[]};
+
+bindDropzone("st-expense-dz-cashflow","st-expense-file-cashflow",async(file,dz)=>{
+  clearErr("st-expense-err");
+  try{
+    const data=await readFile(file);
+    const rows=parseExpenseCashflowXlsx(data);
+    stExpenseState.rows=rows;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name;
+    const matchCount=rows.filter(r=>ST_EXPENSE_CATS.includes(classifyRow(r))).length;
+    document.getElementById("st-expense-status").textContent=
+      matchCount>0 ? `找到 ${matchCount} 筆短租處相關資料，可以下載傳票` : "這份金流表裡沒有找到短租處相關的資料";
+    document.getElementById("st-expense-btn-voucher").disabled=matchCount===0;
+  }catch(e){ showErr("st-expense-err",e.message); }
+});
+
+document.getElementById("st-expense-btn-voucher").addEventListener("click",()=>{
+  const{totalFiles}=buildAndDownloadExpenseCategoryVouchers(stExpenseState.rows, ST_EXPENSE_CATS, stExpenseVoucherBatches);
+  if(totalFiles===0){
+    showErr("st-expense-err","沒有產生任何檔案");
+  }else{
+    clearErr("st-expense-err");
+    document.getElementById("st-expense-status").textContent=`✓ 已下載 ${totalFiles} 個傳票檔案`;
+  }
+});
+
+/* ══════════════════════════════════════
+   社宅包租屋主出款傳票：獨立區塊，只抓「社宅包租屋主出款」這個分類
+══════════════════════════════════════ */
+let sheExpenseVoucherBatches=new Map();
+let sheExpenseState={rows:[]};
+
+bindDropzone("she-expense-dz-cashflow","she-expense-file-cashflow",async(file,dz)=>{
+  clearErr("she-expense-err");
+  try{
+    const data=await readFile(file);
+    const rows=parseExpenseCashflowXlsx(data);
+    sheExpenseState.rows=rows;
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name;
+    const matchCount=rows.filter(r=>classifyRow(r)==="社宅包租屋主出款").length;
+    document.getElementById("she-expense-status").textContent=
+      matchCount>0 ? `找到 ${matchCount} 筆社宅包租屋主出款資料，可以下載傳票` : "這份金流表裡沒有找到社宅包租屋主出款的資料";
+    document.getElementById("she-expense-btn-voucher").disabled=matchCount===0;
+  }catch(e){ showErr("she-expense-err",e.message); }
+});
+
+document.getElementById("she-expense-btn-voucher").addEventListener("click",()=>{
+  const{totalFiles}=buildAndDownloadExpenseCategoryVouchers(sheExpenseState.rows, ["社宅包租屋主出款"], sheExpenseVoucherBatches);
+  if(totalFiles===0){
+    showErr("she-expense-err","沒有產生任何檔案");
+  }else{
+    clearErr("she-expense-err");
+    document.getElementById("she-expense-status").textContent=`✓ 已下載 ${totalFiles} 個傳票檔案`;
+  }
+});
+
 document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
   const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
 
@@ -4621,7 +4831,6 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
     ...SHEET_ORDER.filter(s=>sheetGroups.has(s)),
     ...[...sheetGroups.keys()].filter(s=>!SHEET_ORDER.includes(s))
   ];
-  const allRowsFlat=[]; // 收集全部工作頁產出的傳票列(不含表頭)，供立帳檔依日期分組使用
 
   sheetsToProcess.forEach(sheetName=>{
     const sheetRows=sheetGroups.get(sheetName);
@@ -4706,136 +4915,12 @@ document.getElementById("fang-pay-btn-voucher").addEventListener("click",()=>{
 
     const ws=buildVoucher49Sheet(rows.slice(1));
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
-    allRowsFlat.push(...rows.slice(1)); // 去掉表頭，收集這個工作頁產出的傳票列
   });
 
   XLSX.writeFile(wb,"傳票匯入_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
 
-  // 立帳批次改成在每個「分類拆出的獨立檔案」實際產生時各自登記（見下方），
-  // 主檔(依原始工作頁分頁、可能橫跨多天的那份)目前先不納入立帳，範圍限定在退押金等分類檔案。
-  fangPayVoucherBatches.clear();
-
-  // ── 按單號分類產出獨立 Excel ──
-  const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","桃園市","基隆市","新竹市","嘉義市","新竹縣","苗栗縣","彰化縣","南投縣","雲林縣","嘉義縣","屏東縣","宜蘭縣","花蓮縣","台東縣","澎湖縣","金門縣","連江縣"];
-
-  // 分類函式
-  function classifyRow(row){
-    const orderNo=row.orderNo||"";
-    const desc=row.desc||"";
-    if(desc.includes("退押金")){
-      // 退押金依照房源資料庫的「出租模式」分成短租／房管(長租)兩個檔案。
-      const houseMatch=matchHousingFromDesc(desc);
-      // 找不到房源、或出租模式資料是空的，預設歸類到「房管」（多數房源都是年租管理）
-      const rentMode=houseMatch?houseMatch.rentMode:"";
-      return rentMode==="短租管理" ? "退押金_短租" : "退押金_房管";
-    }
-    if(orderNo.includes("代租請")) return "房管屋主出款";
-    if(orderNo.includes("月請")){
-      const isFullAddr=CITY_KEYS_V.some(k=>desc.startsWith(k));
-      if(isFullAddr) return "社宅包租屋主出款";
-      return "全居包租屋主出款";
-    }
-    if(orderNo.includes("請")&&desc.includes("屋主")&&desc.includes("租金")) return "合拆屋主出款";
-    return null;
-  }
-
-  // 按分類分組（保持金流表順序）
-  const fileGroups=new Map();
-  fangPayVoucherState.rows.forEach(row=>{
-    const cat=classifyRow(row);
-    if(!cat) return;
-    if(!fileGroups.has(cat)) fileGroups.set(cat,[]);
-    fileGroups.get(cat).push(row);
-  });
-
-  // 每個分類 × 每個交易日期，各自產出一個 Excel（一個傳票只會有一個日期，
-  // 跟社宅、業務處那邊的規則一致；檔名的日期用金流表上這筆本身的交易日期，不是今天處理的日期）。
-  fileGroups.forEach((groupRows,cat)=>{
-    const vRows=[HEADERS];
-
-    // 屋主租金分組處理
-    const ownerRowsG=groupRows.filter(r=>{
-      const d=r.desc||"";
-      return d.includes("屋主")&&(d.includes("租金")||d.includes("扣繳")||d.includes("二代健保"));
-    });
-    const normalRowsG=groupRows.filter(r=>!ownerRowsG.includes(r));
-
-    const ownerGroupsG=new Map();
-    ownerRowsG.forEach(row=>{
-      const info=parseOwnerRentDesc(row.desc);
-      const key=`${info.houseName}|${info.ym}|${info.ownerName}`;
-      if(!ownerGroupsG.has(key)) ownerGroupsG.set(key,[]);
-      ownerGroupsG.get(key).push({row,info});
-    });
-
-    ownerGroupsG.forEach((items)=>{
-      const main=items.find(i=>i.info.isMain);
-      const withhold=items.find(i=>i.info.isWithhold);
-      const health=items.find(i=>i.info.is2ndHealth);
-      if(!main) return;
-      const{houseName,code,ym,isFullAddr}=main.info;
-      const mainFee=main.row.fee||0;
-      const dateStr=main.row.rocDateStr||TODAY_ROC;
-      const dept=main.row.deptNo||"";
-      if(isFullAddr){
-        const FC="53939912";
-        vRows.push([115,"DEFAULT",3,dateStr,"131450-01",FC,1,main.row.expense,main.row.desc,dept,liChong("131450-01")]);
-        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
-        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",FC,2,main.row.expense+mainFee,main.row.desc,dept,liChong("1110-01")]);
-        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,withhold.row.expense,withhold.row.desc,dept,liChong("131450-01")]);
-        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"131450-01",FC,1,health.row.expense,health.row.desc,dept,liChong("131450-01")]);
-      }else{
-        const totalAmt=(main.row.expense||0)+(withhold?.row.expense||0)+(health?.row.expense||0);
-        vRows.push([115,"DEFAULT",3,dateStr,"5990-01",code,1,totalAmt,`${houseName}-${ym}租金`,dept,liChong("5990-01")]);
-        if(mainFee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270","",1,mainFee,"匯款手續費","",liChong("6270")]);
-        vRows.push([115,"DEFAULT",3,dateStr,"1110-01",code,2,main.row.expense,main.row.desc,dept,liChong("1110-01")]);
-        if(withhold) vRows.push([115,"DEFAULT",3,withhold.row.rocDateStr||TODAY_ROC,"1110-01",code,2,withhold.row.expense,withhold.row.desc,dept,liChong("1110-01")]);
-        if(health) vRows.push([115,"DEFAULT",3,health.row.rocDateStr||TODAY_ROC,"1110-01",code,2,health.row.expense,health.row.desc,dept,liChong("1110-01")]);
-      }
-    });
-
-    normalRowsG.forEach(row=>{
-      const vLines=buildExpenseVoucherLines(row);
-      vLines.forEach(line=>{
-        vRows.push([115,"DEFAULT",3,row.rocDateStr||TODAY_ROC,
-          line.acctCode,line.custCode,line.dc,line.amount,line.summary,row.deptNo||"",liChong(line.acctCode)]);
-      });
-    });
-
-    // 依交易日期(第4欄)分組，一個日期輸出一個檔案
-    const byDate=new Map();
-    vRows.slice(1).forEach(r=>{
-      const d=r[3];
-      if(!byDate.has(d)) byDate.set(d,[]);
-      byDate.get(d).push(r);
-    });
-    [...byDate.keys()].sort().forEach(dateStr=>{
-      const ws=buildVoucher49Sheet(byDate.get(dateStr));
-      const wbOut=XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wbOut,ws,"傳票累積檔");
-      const dateSafe=String(dateStr).replace(/\//g,"-");
-      const fileKey=`${cat}_${dateSafe}`; // 跟實際下載的檔名一致，一個檔案一筆立帳批次
-      XLSX.writeFile(wbOut,`${fileKey}.xlsx`);
-      // 「退押金_短租」這裡下載出來的還是用通用公式(131450-01)打的暫時版本，
-      // 不是短租真正的打法（短租要另外上傳退款單＋電子發票，透過下面「短租退款傳票」那個專屬流程才會產生正確的傳票）。
-      // 所以這個分類不納入立帳批次，避免會計誤把這個暫時版本拿去立帳。
-      if(cat==="退押金_短租") return;
-      fangPayVoucherBatches.set(fileKey, byDate.get(dateStr));
-    });
-  });
-
-  renderPayLizhangInputs();
-
-  // 提醒：如果這次有短租退押金，下載出來的「退押金_短租」是用通用公式打的暫時版本，
-  // 不是正確的短租打法，要改用下面「短租退款傳票」那個專屬流程（上傳退款單＋電子發票）重新產生正確的傳票。
-  const hasShortTermDeposit=fileGroups.has("退押金_短租");
   const statusEl=document.getElementById("fang-pay-voucher-status");
-  if(hasShortTermDeposit){
-    statusEl.innerHTML=`✓ 傳票已下載。<br><span style="color:#c0392b;">⚠ 這次有短租退押金，「退押金_短租」那份是用通用公式打的暫時版本，不是正確的短租打法（不含電費銷項稅額），請忽略那份，改用下方「短租退款傳票」上傳退款單＋電子發票，重新產生正確的傳票。</span>`;
-  }else{
-    statusEl.textContent="✓ 傳票已下載";
-  }
-
+  statusEl.textContent="✓ 傳票已下載";
 });
 
 // ══════════════════════════════════════
@@ -5289,354 +5374,6 @@ function parseVoucherXlsx(data){
   }));
 }
 
-// 解析金流表找屋主支出列
-function parseCashflowForThird(data){
-  const wb=XLSX.read(data,{type:"array"});
-  // 找含「世貿」「14432」「房務」的工作頁，找不到則用第一個
-  const sheetName=wb.SheetNames.find(n=>n.includes("世貿")||n.includes("14432")||n.includes("房務"))
-    ||wb.SheetNames[0];
-  const ws=wb.Sheets[sheetName];
-  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
-  const rows=[];         // 屋主支出列（主軸）
-  const incomeRows=[];   // 收入列
-  const expenseOther=[]; // 非屋主支出列
-  let currentDate="";
-
-  for(const r of aoa){
-    // 日期沿用邏輯（支援多種格式）
-    if(r[0]!=null){
-      try{
-        const roc=toRoc(r[0]);
-        currentDate=`${roc.year}/${pad2(roc.month)}/${pad2(roc.day)}`;
-      }catch(e){
-        const dateStr=String(r[0]).replace(/\s*★\s*/g,"").trim();
-        if(/\d+月\d+日/.test(dateStr)){
-          currentDate=dateStr;
-        }
-      }
-    }
-
-    const desc=r[1]?String(r[1]).replace(/[\r\n]+/g," ").trim():"";
-    const income=r[3]?Number(r[3]):null;
-    const expense=r[4]?Number(r[4]):null;
-    if(!desc||desc==="說明") continue;
-
-    // 收入列
-    if(income&&!isNaN(income)&&income>0){
-      incomeRows.push({date:currentDate, desc, amount:income});
-    }
-
-    // 支出列
-    if(expense&&!isNaN(expense)&&expense>0){
-      if(desc.includes("屋主")&&desc.includes("租金")){
-        // 屋主支出列（主軸）
-        const beforeDash=desc.split("-")[0];
-        const houseNames=beforeDash.split(/[、，,]/).map(s=>s.trim()).filter(Boolean);
-        const houses=houseNames.map(hn=>{
-          const houseMatch=matchHousing(hn);
-          return{houseName:hn, houseMatch, code:houseMatch?houseMatch.code:hn};
-        });
-        rows.push({date:currentDate, desc, expense, transferFee:Number(r[5])||0, houses});
-      }else{
-        // 非屋主支出（代墊款等）
-        expenseOther.push({date:currentDate, desc, expense});
-      }
-    }
-  }
-  return{rows, incomeRows, expenseOther};
-}
-
-let fang3rdState={
-  cashflow:null, income:null, expense:null, invoice:null,
-  results:[]
-};
-
-["cashflow","invoice"].forEach(key=>{
-  bindDropzone(`fang-3rd-dz-${key}`,`fang-3rd-file-${key}`,async(file,dz)=>{
-    try{
-      const data=await readFile(file);
-      if(key==="cashflow"){
-        const parsed=parseCashflowForThird(data);
-        fang3rdState.cashflow=parsed.rows;
-        fang3rdState.cashflow_income=parsed.incomeRows;
-        fang3rdState.cashflow_expense_other=parsed.expenseOther;
-      }
-      else if(key==="invoice") fang3rdState.invoice=parseFangInvoiceXlsx(data);
-      dz.classList.add("loaded");
-      dz.querySelector(".dz-label").textContent="✓ "+file.name;
-    }catch(e){ showErr("fang-3rd-err",e.message); }
-    updateFang3rdMatchBtn();
-  });
-});
-
-// 收入傳票：支援多份
-document.getElementById("fang-3rd-dz-income").addEventListener("click",()=>
-  document.getElementById("fang-3rd-file-income").click());
-document.getElementById("fang-3rd-file-income").addEventListener("change",async(e)=>{
-  const files=Array.from(e.target.files);
-  if(!files.length) return;
-  try{
-    const allRows=[];
-    for(const file of files){
-      const data=await readFile(file);
-      const rows=parseVoucherXlsx(data);
-      allRows.push(...rows);
-    }
-    fang3rdState.income=allRows;
-    const dz=document.getElementById("fang-3rd-dz-income");
-    dz.classList.add("loaded");
-    dz.querySelector(".dz-label").textContent=
-      files.length>1?`✓ ${files.length} 份收入傳票（共${allRows.length}筆）`:"✓ "+files[0].name;
-  }catch(e){ showErr("fang-3rd-err",e.message); }
-  updateFang3rdMatchBtn();
-});
-
-// 支出傳票：支援多份
-document.getElementById("fang-3rd-dz-expense").addEventListener("click",()=>
-  document.getElementById("fang-3rd-file-expense").click());
-document.getElementById("fang-3rd-file-expense").addEventListener("change",async(e)=>{
-  const files=Array.from(e.target.files);
-  if(!files.length) return;
-  try{
-    const allRows=[];
-    for(const file of files){
-      const data=await readFile(file);
-      const rows=parseVoucherXlsx(data);
-      allRows.push(...rows);
-    }
-    fang3rdState.expense=allRows;
-    const dz=document.getElementById("fang-3rd-dz-expense");
-    dz.classList.add("loaded");
-    dz.querySelector(".dz-label").textContent=
-      files.length>1?`✓ ${files.length} 份支出傳票（共${allRows.length}筆）`:"✓ "+files[0].name;
-  }catch(e){ showErr("fang-3rd-err",e.message); }
-  updateFang3rdMatchBtn();
-});
-
-function updateFang3rdMatchBtn(){
-  const hasCashflow=fang3rdState.cashflow!=null;
-  const hasInvoice=fang3rdState.invoice!=null&&fang3rdState.invoice.length>0;
-  const canDownload=hasCashflow&&hasInvoice;
-  console.log(`updateFang3rdMatchBtn: cashflow=${hasCashflow} invoice=${hasInvoice} canDownload=${canDownload}`);
-  document.getElementById("fang-3rd-btn-download").disabled=!canDownload;
-  const topBtn=document.getElementById("fang-3rd-btn-download-top");
-  if(topBtn) topBtn.disabled=!canDownload;
-}
-
-// 上方下載按鈕觸發同樣的下載
-const fang3rdTopBtn=document.getElementById("fang-3rd-btn-download-top");
-if(fang3rdTopBtn){
-  fang3rdTopBtn.addEventListener("click",()=>{
-    document.getElementById("fang-3rd-btn-download").click();
-  });
-}
-
-;
-
-function renderFang3rdResult(){
-  document.getElementById("fang-3rd-result").hidden=false;
-  // 預設收合
-  document.getElementById("fang-3rd-tb-wrap").hidden=true;
-  document.getElementById("fang-3rd-toggle").textContent="▶";
-
-  const tb=document.getElementById("fang-3rd-tb");
-  tb.innerHTML="";
-  let rowNum=0;
-  fang3rdState.results.forEach(item=>{
-    const{cfRow,houseResults}=item;
-    houseResults.forEach(h=>{
-      rowNum++;
-      const hasIncome=h.incomeLines.length>0;
-      const tr=document.createElement("tr");
-      tr.className=hasIncome?"matched":"unmatched";
-      tr.innerHTML=`
-        <td>${rowNum}</td>
-        <td>${h.houseName}</td>
-        <td class="mono right">${fmtMoney(cfRow.expense)}</td>
-        <td><span class="tag ${hasIncome?"ok":"warn"}">${h.incomeLines.length} 筆</span></td>
-        <td><span class="tag ${h.expenseLines.length>0?"blue":"grey"}">${h.expenseLines.length} 筆</span></td>
-        <td><span class="tag ${h.invoices.length>0?"ok":"grey"}">${h.invoices.length} 張</span></td>
-        <td><span class="tag ${hasIncome?"ok":"warn"}">${hasIncome?"可產出":"收入傳票未找到"}</span></td>
-      `;
-      tb.appendChild(tr);
-    });
-  });
-
-  const total=fang3rdState.results.reduce((s,r)=>
-    s+r.houseResults.filter(h=>h.incomeLines.length>0).length,0);
-  const summaryText=`共 ${rowNum} 個房源，${total} 個可產出傳票`;
-  document.getElementById("fang-3rd-bal").textContent=summaryText;
-  document.getElementById("fang-3rd-summary-line").textContent=summaryText;
-}
-
-document.getElementById("fang-3rd-btn-reset").addEventListener("click",()=>{
-  fang3rdState={cashflow:null,income:null,expense:null,invoice:null,results:[]};
-  ["cashflow","income","expense","invoice"].forEach(key=>{
-    const dz=document.getElementById(`fang-3rd-dz-${key}`);
-    dz.classList.remove("loaded");
-    const labels={cashflow:"上傳金流表",income:"上傳收入傳票檔",
-      expense:"上傳支出傳票檔",invoice:"上傳電子發票"};
-    dz.querySelector(".dz-label").textContent=labels[key];
-    const fi=document.getElementById(`fang-3rd-file-${key}`);
-    if(fi) fi.value="";
-  });
-  document.getElementById("fang-3rd-result").hidden=true;
-  document.getElementById("fang-3rd-btn-download").disabled=true;
-  document.getElementById("fang-3rd-bal").textContent="—";
-  clearErr("fang-3rd-err");
-});
-
-document.getElementById("fang-3rd-btn-download").addEventListener("click",()=>{
-  const HEADERS=["年度","傳票號碼","傳票種類","日期","科目代號","客戶供應商代號","借/貸","金額","長摘要","部門編號","立沖否"];
-  const rows=[HEADERS];
-  const rocYear=115;
-
-  const useMethodA=!(fang3rdState.income&&fang3rdState.expense);
-  const invoices=fang3rdState.invoice||[];
-  const cfRows=fang3rdState.cashflow||[];          // 屋主支出列
-  const incomeRows=fang3rdState.cashflow_income||[]; // 金流表收入列
-  const expOther=fang3rdState.cashflow_expense_other||[]; // 金流表非屋主支出
-
-  // 以電子發票分組（供查找用）
-  const invGroups=new Map();
-  invoices.forEach(inv=>{
-    const key=`${inv.custCode||inv.caseName}|${inv.yearMonth}`;
-    if(!invGroups.has(key)) invGroups.set(key,{invList:[],code:inv.custCode,caseName:inv.caseName,ym:inv.yearMonth});
-    invGroups.get(key).invList.push(inv);
-  });
-
-  const processedKeys=new Set();
-
-  const processGroup=(caseName,ym,code,cfRow)=>{
-    const groupStart=rows.length;
-    const houseKey=caseName.replace(/居所.*$/,"").replace(/[-\s]/g,"").trim();
-    const dateStr=cfRow?.date||
-      incomeRows.find(r=>{
-        const dk=r.desc.replace(/[\s]/g,"");
-        return houseKey.length>=2&&dk.includes(houseKey)&&(!ym||r.desc.includes(ym));
-      })?.date||TODAY_ROC;
-
-    if(useMethodA){
-      const relIncome=incomeRows.filter(r=>{
-        const dk=r.desc.replace(/[\s]/g,"");
-        const hk=houseKey.replace(/[\s]/g,"");
-        const nameMatch=hk.length>=2&&(dk.includes(hk)||r.desc.includes(caseName)||
-          (code&&matchHousing(r.desc.split("-")[0].trim())?.code===code));
-        const ymMatch=!ym||r.desc.includes(ym);
-        return nameMatch&&ymMatch;
-      });
-      relIncome.forEach(r=>{
-        const d=r.desc;
-        let acct="2205-02";
-        if(d.includes("代管費")||d.includes("月代管")) acct="2205-01";
-        else if(d.includes("押金")) acct="2205-03";
-        else if(d.includes("服務費")) acct="2205-01";
-        rows.push([rocYear,"DEFAULT",3,r.date||dateStr,acct,code,1,r.amount,d,""]);
-      });
-
-      const curDebit=rows.slice(groupStart).filter(r=>r[6]===1).reduce((s,r)=>s+(Number(r[7])||0),0);
-      const curCredit=rows.slice(groupStart).filter(r=>r[6]===2).reduce((s,r)=>s+(Number(r[7])||0),0);
-      const ownerAmt=cfRow?Math.round(cfRow.expense+(cfRow.transferFee||0)):0;
-      const gap=Math.round(curDebit-curCredit-ownerAmt);
-
-      if(gap>0){
-        const candidates=expOther.filter(r=>{
-          const dk=r.desc.replace(/[\s]/g,"");
-          const hk=houseKey.replace(/[\s]/g,"");
-          return hk.length>=2&&(dk.includes(hk)||r.desc.includes(caseName));
-        }).map(r=>{
-          const m=r.desc.match(new RegExp(houseKey.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"[^、，]*?\\$([\\d,]+)"));
-          const itemAmt=m?parseInt(m[1].replace(/,/g,"")):Math.round(r.expense);
-          return{...r,itemAmt};
-        });
-        const limit=Math.min(candidates.length,8);
-        let found=null;
-        for(let mask=1;mask<(1<<limit);mask++){
-          let sum=0;const sel=[];
-          for(let i=0;i<limit;i++){if(mask&(1<<i)){sum+=candidates[i].itemAmt;sel.push(candidates[i]);}}
-          if(Math.abs(sum-gap)<=1){found=sel;break;}
-        }
-        if(found) found.forEach(r=>{
-          rows.push([rocYear,"DEFAULT",3,r.date||dateStr,"131450-01",code,2,r.itemAmt,r.desc,"",liChong("131450-01")]);
-        });
-      }
-    }else{
-      const matchLine=(r,dc)=>{
-        const codeMatch=code&&r.custCode===code;
-        const nameMatch=r.summary.includes(caseName);
-        const ymOk=!ym||r.summary.includes(ym);
-        return r.dc===dc&&(codeMatch||nameMatch)&&ymOk;
-      };
-      const incomeLines=(fang3rdState.income||[]).filter(r=>matchLine(r,2)&&r.acctCode!=="1110-01");
-      const expenseLines=(fang3rdState.expense||[]).filter(r=>matchLine(r,1)&&!r.summary.includes("屋主")&&r.acctCode!=="1110-01");
-      incomeLines.forEach(line=>{rows.push([rocYear,"DEFAULT",3,line.date||dateStr,line.acctCode,line.custCode,1,line.amount,line.summary,"",liChong(line.acctCode)]);}); 
-      expenseLines.forEach(line=>{rows.push([rocYear,"DEFAULT",3,line.date||dateStr,line.acctCode,line.custCode,2,line.amount,line.summary,"",liChong(line.acctCode)]);}); 
-    }
-
-    // Step2：電子發票
-    const invKey=`${code||caseName}|${ym}`;
-    const invGroup=invGroups.get(invKey);
-    const invList=invGroup?invGroup.invList:[];
-    invList.forEach(inv=>{
-      const s1=`${inv.caseName}-${inv.yearMonth}-${fangInvoiceTypeName(inv.type)}`;
-      const s2=`${s1}-${inv.invoiceNo}`;
-      const invDept=(inv.type==="代管費"||inv.type==="系統服務費")?"002":"";
-      rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,fangInvoiceAcctCode(inv.type),inv.custCode,2,inv.untaxed,s1,invDept]);
-      rows.push([inv.rocYear,"DEFAULT",3,inv.rocDateStr||dateStr,"2290",inv.custCode,2,inv.tax,s2,"",liChong("2290")]);
-    });
-
-    // Step4：屋主支出最後一列
-    if(cfRow){
-      const totalAmt=cfRow.expense+(cfRow.transferFee||0);
-      const lastRowCode=cfRow.houses[0]?.code||code;
-      if(cfRow.transferFee>0)
-        rows.push([rocYear,"DEFAULT",3,cfRow.date||dateStr,"6270","",1,cfRow.transferFee,"匯款手續費","002",liChong("6270")]);
-      rows.push([rocYear,"DEFAULT",3,cfRow.date||dateStr,"1110-01",lastRowCode,2,totalAmt,cfRow.desc,"",liChong("1110-01")]);
-    }
-
-    // 借貸平衡檢查
-    const groupRows=rows.slice(groupStart);
-    const debit=groupRows.filter(r=>r[6]===1).reduce((s,r)=>s+(Number(r[7])||0),0);
-    const credit=groupRows.filter(r=>r[6]===2).reduce((s,r)=>s+(Number(r[7])||0),0);
-    if(Math.abs(debit-credit)>1)
-      rows.push([rocYear,"DEFAULT",3,dateStr,"⚠","",0,0,`【借貸不平衡】${caseName}-${ym} 差額${debit-credit}`,""]);
-  };
-
-  // 按金流表屋主支出列順序處理
-  cfRows.forEach(cfRow=>{
-    cfRow.houses.forEach(h=>{
-      const houseKey=h.houseName.replace(/居所.*$/,"").replace(/[-\s]/g,"").trim();
-      const matchedGroup=[...invGroups.values()].find(g=>{
-        const gKey=g.caseName.replace(/居所.*$/,"").replace(/[-\s]/g,"").trim();
-        return gKey===houseKey||g.code===h.code||
-          g.caseName.includes(h.houseName)||h.houseName.includes(g.caseName);
-      });
-      if(matchedGroup){
-        const key=`${matchedGroup.code||matchedGroup.caseName}|${matchedGroup.ym}`;
-        if(!processedKeys.has(key)){
-          processedKeys.add(key);
-          processGroup(matchedGroup.caseName,matchedGroup.ym,matchedGroup.code,cfRow);
-        }
-      }
-    });
-  });
-
-  // 沒有對應金流表屋主支出的電子發票
-  invGroups.forEach(({invList,code,caseName,ym})=>{
-    const key=`${code||caseName}|${ym}`;
-    if(!processedKeys.has(key)){
-      processedKeys.add(key);
-      processGroup(caseName,ym,code,null);
-    }
-  });
-
-  // 產出單一 Excel 檔案
-  const ws=buildVoucher49Sheet(rows.slice(1));
-  const wb_out=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb_out,ws,"傳票累積檔");
-  const today=TODAY_ROC.replace(/\//g,"-");
-  XLSX.writeFile(wb_out,`出款屋主_傳票匯入_${today}.xlsx`);
-});
 
 /* ══════════════════════════════════════
    業務處電子發票邏輯
@@ -6479,17 +6216,6 @@ function fangInvoiceTypeName(type){
 }
 
 let fangInvState={invoices:[]};
-
-bindDropzone("fang-3rd-dz-invoice","fang-3rd-file-invoice",async(file,dz)=>{
-  try{
-    const data=await readFile(file);
-    fangInvState.invoices=parseFangInvoiceXlsx(data);
-    dz.classList.add("loaded");
-    dz.querySelector(".dz-label").textContent="✓ "+file.name;
-    renderFangInvPreview();
-    document.getElementById("fang-inv-download").disabled=false;
-  }catch(e){ showErr("fang-inv-err",e.message); }
-});
 
 function renderFangInvPreview(){
   const invs=fangInvState.invoices;

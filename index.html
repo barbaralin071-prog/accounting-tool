@@ -865,7 +865,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       💼 業務處電子發票 → 傳票匯入
     </div>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
-      上傳業務處金流表＋電子發票，比對後產出標示發票的金流表及傳票匯入檔（服務費比對發票，定金／斡旋金免比對直接產生分錄）
+      上傳業務處金流表，可以先產出雜項分錄，不用等發票；電子發票是選填的——之後有發票了再回來上傳、重新比對，
+      服務費類的入帳才會改成正式的服務費科目分錄；沒有發票的話，服務費類會先比照定金／斡旋直接產生1110-02/2205-01這組通用分錄。
     </div>
     <div class="upload-row" style="grid-template-columns:1fr 1fr;">
       <div>
@@ -879,8 +880,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       <div>
         <div class="dropzone" id="biz-inv-dz-invoice">
           <div class="dz-icon">🧾</div>
-          <div class="dz-label">上傳業務處電子發票</div>
-          <div class="dz-hint">成交資訊-發票資訊-子表.xlsx</div>
+          <div class="dz-label">上傳業務處電子發票（選填）</div>
+          <div class="dz-hint">成交資訊-發票資訊-子表.xlsx，沒有發票可以先不上傳</div>
         </div>
         <input type="file" id="biz-inv-file-invoice" accept=".xlsx" hidden>
       </div>
@@ -955,6 +956,26 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         </div>
       </div>
     </div>
+  </div>
+
+  <!-- ── 業務處立帳檔，方法跟房管處相同：一個檔案一個立帳批次，序號共用同一份記錄 ── -->
+  <div class="card" id="biz-inv-lizhang-card" style="margin-top:20px;display:none;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔（業務處）</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      下面每一列對應到剛才下載的「一個傳票檔案」，請照你實際匯入文中的順序，把每個檔案各自拿到的真正傳票號碼填進去，
+      再產生立帳檔（一個檔案對應一個立帳檔）。立帳檔會抓傳票裡科目代號為
+      <strong>2205-01、2205-02、2205-03、2205-04、131450-01</strong> 的那些列（不分借貸方向，只要掛這幾種科目就算）。
+      立帳單號的流水序號跟房管處、社宅共用同一份記錄，同一天不管哪個部門立帳，序號都會連續編號、不會撞。
+    </div>
+    <div id="biz-inv-lizhang-inputs"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+      <span style="font-size:11.5px;color:var(--ink-faint);">序號會記住每個交易日期上次用到哪裡，同一個日期分好幾次處理也不會撞號</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="biz-inv-btn-lizhang-clear" title="清空所有交易日期記住的序號，重新從1001起算">清除序號記錄</button>
+        <button class="btn primary" id="biz-inv-btn-lizhang">產生立帳檔</button>
+      </div>
+    </div>
+    <div class="errbox" id="biz-inv-lizhang-err"></div>
   </div>
 
 </div><!-- /panel-biz -->
@@ -4095,7 +4116,7 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
       const isPrimary=r.cf.desc.indexOf(p.group.houseName)<=r.cf.desc.indexOf(r.matchedWith.partial.group.houseName);
       const wireFee=isPrimary?(r.cf.fee||0):0;
       if(isPrimary){
-        if(wireFee>0) lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
+        if(wireFee>0) lines.push({acctCode:"6270", custCode:p.code, dc:1, amount:wireFee, summary:"匯款手續費"});
         const combinedAmount=p.baseRemain+r.matchedWith.partial.baseRemain+wireFee;
         lines.push({acctCode:"1110-01", custCode:"", dc:2, amount:combinedAmount, summary:r.cf.desc});
       }
@@ -4109,7 +4130,7 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
     }
 
     const wireFee=r.cf?(r.cf.fee||0):0;
-    if(wireFee>0) lines.push({acctCode:"6270", custCode:"", dc:1, amount:wireFee, summary:"匯款手續費"});
+    if(wireFee>0) lines.push({acctCode:"6270", custCode:p.code, dc:1, amount:wireFee, summary:"匯款手續費"});
     const remainAmount=p.baseRemain+wireFee;
     // 1110-01的摘要：有比對到金流表的話，直接照抄金流表原本的說明文字（一字不改），
     // 因為金流表上的屋主姓名才是正確、權威的來源；不能用發票的客戶名稱去重組，
@@ -5798,6 +5819,16 @@ function reconcileBizInvoice(cashflowRows, invoices){
 
   const serviceRows=cashflowRows.filter(r=>r.kind==="service");
 
+  // 電子發票是選填的：沒有上傳發票，代表這批還沒有發票資料可以比對，
+  // 這時候「服務費類」的入帳先比照「定金／斡旋」的做法，直接產生1110-02/2205-01這組通用分錄，
+  // 之後等發票上傳了，再回來走正式的服務費比對流程（產生真正的4101-xx科目分錄）。
+  if(!invoices||!invoices.length){
+    serviceRows.forEach(cfRow=>{
+      matched.push({cfRow, type:"deposit"});
+    });
+    return{matched, unmatched, ambiguous, other};
+  }
+
   // 地址正規化：去除括號（全形/半形）與所有空白，避免「2樓(202室)」跟「2樓 202室」這種純格式差異比對不到
   function bizNormalizeAddr(s){
     if(!s) return "";
@@ -5876,6 +5907,8 @@ function reconcileBizInvoice(cashflowRows, invoices){
 }
 
 let bizInvState={cashflow:null,invoices:null,matched:[],unmatched:[],ambiguous:[],other:[]};
+// 業務處傳票批次登記表，供業務處立帳功能使用——fileKey(不含副檔名) -> 這個檔案的傳票列陣列
+let bizInvVoucherBatches=new Map();
 
 bindDropzone("biz-inv-dz-cashflow","biz-inv-file-cashflow",async(file,dz)=>{
   try{
@@ -5898,8 +5931,7 @@ bindDropzone("biz-inv-dz-invoice","biz-inv-file-invoice",async(file,dz)=>{
 });
 
 function updateBizInvMatchBtn(){
-  document.getElementById("biz-inv-btn-match").disabled=
-    !(bizInvState.cashflow&&bizInvState.invoices);
+  document.getElementById("biz-inv-btn-match").disabled=!bizInvState.cashflow;
 }
 
 document.getElementById("biz-inv-btn-match").addEventListener("click",()=>{
@@ -5929,7 +5961,7 @@ document.getElementById("biz-inv-btn-reset").addEventListener("click",()=>{
     const dz=document.getElementById(id);
     dz.classList.remove("loaded");
     dz.querySelector(".dz-label").textContent=
-      id.includes("cashflow")?"上傳業務處金流表":"上傳業務處電子發票";
+      id.includes("cashflow")?"上傳業務處金流表":"上傳業務處電子發票（選填）";
   });
   ["biz-inv-file-cashflow","biz-inv-file-invoice"].forEach(id=>{
     document.getElementById(id).value="";
@@ -6250,9 +6282,98 @@ document.getElementById("biz-inv-btn-voucher").addEventListener("click",()=>{
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     const dateSafe=String(date).replace(/\//g,"-");
-    XLSX.writeFile(wb,`傳票匯入_業務處電子發票_${dateSafe}.xlsx`);
+    const fileKey=`傳票匯入_業務處電子發票_${dateSafe}`;
+    XLSX.writeFile(wb,`${fileKey}.xlsx`);
+    bizInvVoucherBatches.set(fileKey, groups.get(date));
   });
+  renderBizInvLizhangInputs();
 });
+
+/* ══════════════════════════════════════
+   業務處立帳檔，邏輯跟房管處相同：只要科目代號掛在指定清單裡就要立帳，
+   不像社宅要看借貸方向；序號跟房管處、社宅共用同一份記錄（FANG_LIZHANG_SEQ_KEY）。
+══════════════════════════════════════ */
+const LIZHANG_CODES_BIZ=["2205-01","2205-02","2205-03","2205-04","131450-01"];
+
+function renderBizInvLizhangInputs(){
+  const card=document.getElementById("biz-inv-lizhang-card");
+  const wrap=document.getElementById("biz-inv-lizhang-inputs");
+  if(!bizInvVoucherBatches.size){ card.style.display="none"; return; }
+  card.style.display="block";
+  wrap.innerHTML="";
+  [...bizInvVoucherBatches.keys()].sort().forEach(fileKey=>{
+    const rows=bizInvVoucherBatches.get(fileKey);
+    const rowCount=rows.length;
+    const lizhangCount=rows.filter(r=>LIZHANG_CODES_BIZ.includes(r[4])).length;
+    const div=document.createElement("div");
+    div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
+    div.innerHTML=`
+      <span style="min-width:280px;font-size:13px;">${fileKey}.xlsx</span>
+      <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
+      <input type="text" class="biz-inv-lizhang-vnum" data-file="${fileKey}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById("biz-inv-btn-lizhang").addEventListener("click",()=>{
+  clearErr("biz-inv-lizhang-err");
+  const inputs=[...document.querySelectorAll(".biz-inv-lizhang-vnum")];
+  const vnumByFile={};
+  inputs.forEach(inp=>{
+    const v=inp.value.trim();
+    if(v) vnumByFile[inp.dataset.file]=v;
+  });
+  if(!Object.keys(vnumByFile).length){
+    showErr("biz-inv-lizhang-err","請至少填一個檔案對應的真正傳票號碼");
+    return;
+  }
+
+  const seqMap=fangLoadLizhangSeqMap();
+  let anyOutput=false;
+
+  Object.keys(vnumByFile).sort().forEach(fileKey=>{
+    const voucherRows=bizInvVoucherBatches.get(fileKey);
+    if(!voucherRows) return;
+    const realVoucherNo=vnumByFile[fileKey];
+
+    const outRows=[];
+    voucherRows.forEach((r,idx)=>{
+      const acctCode=r[4];
+      if(!LIZHANG_CODES_BIZ.includes(acctCode)) return;
+      const rowDate=r[3];
+      const seqInFile=(seqMap[rowDate]||1000)+1;
+      seqMap[rowDate]=seqInFile;
+      const lizhangDateRoc=String(rowDate).replace(/\//g,"");
+      const lizhangNo=lizhangDateRoc+String(seqInFile);
+      const seqNo=String(idx+1).padStart(4,"0");
+      outRows.push([
+        lizhangNo, acctCode, rowDate, r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
+      ]);
+    });
+
+    if(!outRows.length) return;
+    anyOutput=true;
+    const ws=buildLizhang13Sheet(outRows);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
+    XLSX.writeFile(wb, `立帳檔_業務處_${fileKey}.xlsx`);
+  });
+
+  if(!anyOutput){
+    showErr("biz-inv-lizhang-err","填的這些檔案裡，沒有任何一列的科目代號符合，沒有東西可以產生立帳檔");
+  }else{
+    fangSaveLizhangSeqMap(seqMap);
+    clearErr("biz-inv-lizhang-err");
+  }
+});
+
+document.getElementById("biz-inv-btn-lizhang-clear").addEventListener("click",()=>{
+  fangSaveLizhangSeqMap({});
+  clearErr("biz-inv-lizhang-err");
+  showErr("biz-inv-lizhang-err","已清空所有交易日期記住的序號（跟房管處、社宅共用同一份），下次產生立帳檔會從1001重新起算");
+});
+
 function parseFangInvoiceXlsx(data){
   const wb=XLSX.read(data,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];

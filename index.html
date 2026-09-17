@@ -424,7 +424,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       📤 支出請款比對
     </div>
     <div style="font-size:13px;color:var(--ink-soft);margin-bottom:14px;">
-      出納：上傳請款單＋退款單 → 下載支出金流表　｜　會計：上傳支出金流表 → 下載傳票
+      出納：上傳請款單＋退款單 → 下載付款明細表　｜　會計：上傳確認後的付款明細表 → 下載傳票
     </div>
     <div class="card">
       <div style="padding:16px 18px;border-bottom:1px solid var(--border);">
@@ -476,7 +476,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="bal" id="fang-pay-bal">—</div>
         <div class="btns">
           <button class="btn secondary" id="fang-pay-btn-reset">重新上傳</button>
-          <button class="btn primary" id="fang-pay-btn-download" disabled>下載支出金流表</button>
+          <button class="btn primary" id="fang-pay-btn-download" disabled>下載付款明細表</button>
         </div>
       </div>
 
@@ -490,7 +490,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
             <div class="dropzone" id="fang-pay-dz-voucher">
               <div class="dz-icon">📊</div>
               <div class="dz-label">上傳支出金流表</div>
-              <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+              <div class="dz-hint">付款明細表_房管處支出_YYYY-MM-DD.xlsx</div>
             </div>
             <input type="file" id="fang-pay-file-voucher" accept=".xlsx" hidden>
           </div>
@@ -550,7 +550,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="dropzone" id="fang-refund2-dz-cashflow" style="max-width:400px;">
           <div class="dz-icon">📊</div>
           <div class="dz-label">上傳確認後的支出金流表</div>
-          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+          <div class="dz-hint">付款明細表_房管處支出_YYYY-MM-DD.xlsx</div>
         </div>
         <input type="file" id="fang-refund2-file-cashflow" accept=".xlsx" hidden>
         <div class="errbox" id="fang-refund2-err"></div>
@@ -1083,7 +1083,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="dropzone" id="she-expense-dz-cashflow" style="max-width:400px;">
           <div class="dz-icon">📊</div>
           <div class="dz-label">上傳確認後的支出金流表</div>
-          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+          <div class="dz-hint">付款明細表_房管處支出_YYYY-MM-DD.xlsx</div>
         </div>
         <input type="file" id="she-expense-file-cashflow" accept=".xlsx" hidden>
         <div class="errbox" id="she-expense-err"></div>
@@ -1192,7 +1192,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="dropzone" id="st-expense-dz-cashflow" style="max-width:400px;">
           <div class="dz-icon">📊</div>
           <div class="dz-label">上傳確認後的支出金流表</div>
-          <div class="dz-hint">金流表_房管處支出_YYYY-MM-DD.xlsx</div>
+          <div class="dz-hint">付款明細表_房管處支出_YYYY-MM-DD.xlsx</div>
         </div>
         <input type="file" id="st-expense-file-cashflow" accept=".xlsx" hidden>
         <div class="errbox" id="st-expense-err"></div>
@@ -3166,8 +3166,8 @@ function parseExpenseCashflowXlsx(data){
     if(hi===-1) return;
 
     const headers=aoa[hi];
-    // 說明欄：找「說明」，找不到就用 col 1（金流表說明通常在第二欄）
-    const iDescByName=headers.findIndex(h=>h==="說明");
+    // 說明欄：找「說明」或「明細」（新版「付款明細表」格式用「明細」當標題），找不到就用 col 1
+    const iDescByName=headers.findIndex(h=>h==="說明"||h==="明細");
     let iDesc=iDescByName>=0?iDescByName:1;
     let iOrderNo=headers.findIndex(h=>h==="單號");
     const iExpense=headers.findIndex(h=>h==="支出");
@@ -3194,8 +3194,9 @@ function parseExpenseCashflowXlsx(data){
       }
     }
 
-    // 找日期欄（col 0）
-    const iDate=0;
+    // 找日期欄：只有標題列第0欄真的叫「日期」才當作日期欄，
+    // 「付款明細表」這種新格式第0欄是「明細」文字，沒有日期欄，一律用今天的日期。
+    const iDate=headers[0]==="日期"?0:-1;
     let currentDate=TODAY_ROC; // 預設今日
 
     aoa.slice(hi+1).forEach(r=>{
@@ -5174,12 +5175,17 @@ function parseRefundXlsx(data){
     const bankCode=String(r[bankCodeCol]||"").trim();
     const transferFee=(bankName.includes("國泰")||bankCode.includes("013"))?0:15;
 
+    // 戶名、收款帳號：用「彙整」開頭的欄位，跟判斷銀行用的是同一組彙整資料，比較不會漏抓
+    const receiver=String(r[col("彙整戶名")]||"").trim();
+    const bankAccount=String(r[col("彙整銀行帳號")]||"").trim();
+
     const deptCol=col("退款部門")>=0?col("退款部門"):22;
     const dept=String(r[deptCol]||"").trim();
     const DEPT_MAP=[['短租','001'],['房管','002'],['業務','003'],['工程','004'],['營運','005']];
     const deptNo=(DEPT_MAP.find(([k])=>dept.includes(k))||["",""])[1];
 
     return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr,desc,amount,transferFee,
+      receiver,bankAccount,
       dept,deptNo,raw:r};
   }).filter(r=>r.amount>0);
 }
@@ -5313,14 +5319,19 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     const rows=sheetGroups[sheetName];
 
     const aoa=[];
-    aoa.push(["日期","說明","單號","收入","支出","匯費","餘額","部門編號"]);
+    aoa.push(["明細","單號","收入","支出","匯費","戶名","退款金額","收款帳號","部門編號"]);
 
     if(sheetName.startsWith("退款單-")){
+      // 退款單：退款金額＝退款單上的總金額（不變）；支出＝退款金額＋匯費（不是國泰銀行才會有這15元匯費，
+      // 是國泰銀行的話匯費是0，支出就會等於退款金額）——因為退款的匯費是從房客/屋主的退款裡扣，不是公司另外出。
       rows.forEach(row=>{
         const fee=row.transferFee>0?row.transferFee:null;
-        aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null,row.deptNo||""]);
+        const expense=row.amount+(row.transferFee||0);
+        aoa.push([row.desc,row.orderNo,null,expense,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
       });
     } else {
+      // 請款單：維持原本的邏輯不變——支出＝請款單上的總金額（不變），匯費是公司另外負擔、單獨列一欄，
+      // 不會加進支出金額裡；同一個收款人合併付款時，匯費只算一次（放在該收款人第一筆）。
       const receiverGroups={};
       const receiverOrder=[];
       rows.forEach(row=>{
@@ -5335,17 +5346,17 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
         const group=receiverGroups[receiver];
         group.forEach((row,idx)=>{
           const fee=idx===0&&row.transferFee>0?row.transferFee:null;
-          aoa.push([null,row.desc,row.orderNo,null,row.amount,fee,null,row.deptNo||""]);
+          aoa.push([row.desc,row.orderNo,null,row.amount,fee,row.accountName||"",null,"",row.deptNo||""]);
         });
       });
     }
 
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:10},{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:12},{wch:10}];
+    ws["!cols"]=[{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:16},{wch:14},{wch:18},{wch:10}];
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
   });
 
-  XLSX.writeFile(wb,"金流表_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
+  XLSX.writeFile(wb,"付款明細表_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
 });
 
 // 解析傳票檔（支援9欄和10欄格式）

@@ -477,6 +477,7 @@ button.btn.ghost:hover{background:var(--accent-soft);}
         <div class="btns">
           <button class="btn secondary" id="fang-pay-btn-reset">重新上傳</button>
           <button class="btn primary" id="fang-pay-btn-download" disabled>下載付款明細表</button>
+          <button class="btn primary" id="fang-pay-btn-bankbatch" disabled>下載網銀批次（退款單）</button>
         </div>
       </div>
 
@@ -5178,6 +5179,9 @@ function parseRefundXlsx(data){
     // 戶名、收款帳號：用「彙整」開頭的欄位，跟判斷銀行用的是同一組彙整資料，比較不會漏抓
     const receiver=String(r[col("彙整戶名")]||"").trim();
     const bankAccount=String(r[col("彙整銀行帳號")]||"").trim();
+    // 網銀批次要用：收款行通匯代碼(彙整銀行代號)、收款人統編(法人才有，個人戶留空)
+    const bankRoutingCode=bankCode;
+    const payeeTaxId=String(r[col("收款人廠商統一編號")]||"").trim();
 
     const deptCol=col("退款部門")>=0?col("退款部門"):22;
     const dept=String(r[deptCol]||"").trim();
@@ -5185,7 +5189,7 @@ function parseRefundXlsx(data){
     const deptNo=(DEPT_MAP.find(([k])=>dept.includes(k))||["",""])[1];
 
     return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr,desc,amount,transferFee,
-      receiver,bankAccount,
+      receiver,bankAccount,bankRoutingCode,payeeTaxId,
       dept,deptNo,raw:r};
   }).filter(r=>r.amount>0);
 }
@@ -5253,6 +5257,7 @@ document.getElementById("fang-pay-btn-gen").addEventListener("click",()=>{
   document.getElementById("fang-pay-bal").textContent=summaryText;
   document.getElementById("fang-pay-summary-line").textContent=summaryText;
   document.getElementById("fang-pay-btn-download").disabled=rows.length===0;
+  document.getElementById("fang-pay-btn-bankbatch").disabled=refCount===0;
 });
 
 document.getElementById("fang-pay-btn-reset").addEventListener("click",()=>{
@@ -5266,6 +5271,7 @@ document.getElementById("fang-pay-btn-reset").addEventListener("click",()=>{
   document.getElementById("fang-pay-result").hidden=true;
   document.getElementById("fang-pay-btn-gen").disabled=true;
   document.getElementById("fang-pay-btn-download").disabled=true;
+  document.getElementById("fang-pay-btn-bankbatch").disabled=true;
   document.getElementById("fang-pay-bal").textContent="—";
   clearErr("fang-pay-err");
 });
@@ -5322,12 +5328,12 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     aoa.push(["明細","單號","收入","支出","匯費","戶名","退款金額","收款帳號","部門編號"]);
 
     if(sheetName.startsWith("退款單-")){
-      // 退款單：退款金額＝退款單上的總金額（不變）；支出＝退款金額＋匯費（不是國泰銀行才會有這15元匯費，
-      // 是國泰銀行的話匯費是0，支出就會等於退款金額）——因為退款的匯費是從房客/屋主的退款裡扣，不是公司另外出。
+      // 退款金額＝退款單上的總金額（不變）；支出＝退款金額（不額外加匯費），
+      // 讓「支出」等於網銀批次上的「實際匯款金額」——匯費由公司另外從自己帳戶扣（外加），
+      // 不會反映在這筆的支出金額裡，匯費另外列在獨立的「匯費」欄位供對帳/立傳票用。
       rows.forEach(row=>{
         const fee=row.transferFee>0?row.transferFee:null;
-        const expense=row.amount+(row.transferFee||0);
-        aoa.push([row.desc,row.orderNo,null,expense,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
+        aoa.push([row.desc,row.orderNo,null,row.amount,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
       });
     } else {
       // 請款單：維持原本的邏輯不變——支出＝請款單上的總金額（不變），匯費是公司另外負擔、單獨列一欄，
@@ -5357,6 +5363,45 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
   });
 
   XLSX.writeFile(wb,"付款明細表_房管處支出_"+new Date().toISOString().slice(0,10)+".xlsx");
+});
+
+/* ══════════════════════════════════════
+   下載網銀批次（退款單）── 國泰整批付款/薪資撥轉媒體格式
+   只處理退款單來源的資料（請款單的匯款方式跟這個不一樣，暫不涵蓋）。
+   實際匯款金額＝退款金額（不含匯費，讓房客/廠商收到的金額不被扣手續費）；
+   手續費方式固定填15(匯費外加)，代表匯費由公司另外從自己帳戶扣，不會少匯給對方；
+   國泰銀行內部轉帳（transferFee=0）不需要外加匯費，手續費方式改填0。
+══════════════════════════════════════ */
+document.getElementById("fang-pay-btn-bankbatch").addEventListener("click",()=>{
+  const refundRows=fangPayState.rows.filter(r=>r.source==="退款單");
+  if(!refundRows.length) return;
+
+  const aoa=[];
+  aoa.push(["整批付款/薪資撥轉媒體格式編輯"]);
+  aoa.push([null,"付款行通匯代碼",null,null,"付款人帳號",null,"付款人統編",null,"付款人戶名"]);
+  aoa.push([null,"收款行通匯代碼","收款人帳號\n(最多16位)","收款人統編\n(最多10位)","實際匯款金額\nex:1元→1","收款人姓名\n(最多35個中文字)","是否電告\n0:不通知\n1:e-mail","電告設備號碼X(50)","手續費方式\n15:匯費外加\n13:匯費內扣","備註\n(最多25個中文字)"]);
+
+  refundRows.forEach(row=>{
+    const feeMode=row.transferFee>0?15:0;
+    aoa.push([
+      null,
+      row.bankRoutingCode||"",
+      row.bankAccount||"",
+      row.payeeTaxId||"",
+      row.amount,
+      row.receiver||"",
+      "0",
+      "",
+      feeMode,
+      row.desc.slice(0,25),
+    ]);
+  });
+
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"]=[{wch:4},{wch:14},{wch:18},{wch:14},{wch:14},{wch:18},{wch:10},{wch:16},{wch:10},{wch:26}];
+  const wb2=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb2,ws,"整批付款&薪資撥轉");
+  XLSX.writeFile(wb2,"網銀批次_退款單_"+new Date().toISOString().slice(0,10)+".xlsx");
 });
 
 // 解析傳票檔（支援9欄和10欄格式）

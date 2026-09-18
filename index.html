@@ -5179,8 +5179,12 @@ function parseRefundXlsx(data){
     // 戶名、收款帳號：用「彙整」開頭的欄位，跟判斷銀行用的是同一組彙整資料，比較不會漏抓
     const receiver=String(r[col("彙整戶名")]||"").trim();
     const bankAccount=String(r[col("彙整銀行帳號")]||"").trim();
-    // 網銀批次要用：收款行通匯代碼(彙整銀行代號)、收款人統編(法人才有，個人戶留空)
-    const bankRoutingCode=bankCode;
+    // 網銀批次要用：收款行通匯代碼＝彙整銀行代號＋彙整分行代號組合起來（例如006+0062=0060062）；
+    // 國外收款銀行沒有這兩個欄位，組合出來就是空字串，代表這筆要另外歸類到國外匯款區域。
+    const branchCode=String(r[col("彙整分行代號")]||"").trim();
+    const bankRoutingCode=(bankCode&&branchCode)?(bankCode+branchCode):"";
+    const isForeign=!bankRoutingCode;
+    // 收款人統編(法人才有，個人戶留空)
     const payeeTaxId=String(r[col("收款人廠商統一編號")]||"").trim();
 
     const deptCol=col("退款部門")>=0?col("退款部門"):22;
@@ -5189,7 +5193,7 @@ function parseRefundXlsx(data){
     const deptNo=(DEPT_MAP.find(([k])=>dept.includes(k))||["",""])[1];
 
     return{source:"退款單",orderNo:String(r[0]||"").trim(),rocDateStr,desc,amount,transferFee,
-      receiver,bankAccount,bankRoutingCode,payeeTaxId,
+      receiver,bankAccount,bankRoutingCode,isForeign,payeeTaxId,
       dept,deptNo,raw:r};
   }).filter(r=>r.amount>0);
 }
@@ -5331,10 +5335,37 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
       // 退款金額＝退款單上的總金額（不變）；支出＝退款金額（不額外加匯費），
       // 讓「支出」等於網銀批次上的「實際匯款金額」——匯費由公司另外從自己帳戶扣（外加），
       // 不會反映在這筆的支出金額裡，匯費另外列在獨立的「匯費」欄位供對帳/立傳票用。
-      rows.forEach(row=>{
-        const fee=row.transferFee>0?row.transferFee:null;
-        aoa.push([row.desc,row.orderNo,null,row.amount,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
-      });
+      // 同一個收款人合併退款時，匯費只算一次（放在該收款人第一筆），跟請款單的處理原則一致。
+      // 國內、國外匯款要分開放：國內的排在前面，中間空5列，國外的排在最後面。
+      function buildRefundRows(list){
+        const out=[];
+        const receiverGroups={};
+        const receiverOrder=[];
+        list.forEach(row=>{
+          if(!receiverGroups[row.receiver]){
+            receiverGroups[row.receiver]=[];
+            receiverOrder.push(row.receiver);
+          }
+          receiverGroups[row.receiver].push(row);
+        });
+        receiverOrder.forEach(receiver=>{
+          const group=receiverGroups[receiver];
+          group.forEach((row,idx)=>{
+            const fee=idx===0&&row.transferFee>0?row.transferFee:null;
+            out.push([row.desc,row.orderNo,null,row.amount,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
+          });
+        });
+        return out;
+      }
+
+      const domesticRows=rows.filter(r=>!r.isForeign);
+      const foreignRows=rows.filter(r=>r.isForeign);
+
+      buildRefundRows(domesticRows).forEach(r=>aoa.push(r));
+      if(foreignRows.length){
+        for(let i=0;i<5;i++) aoa.push([]); // 國內、國外中間空5列
+        buildRefundRows(foreignRows).forEach(r=>aoa.push(r));
+      }
     } else {
       // 請款單：維持原本的邏輯不變——支出＝請款單上的總金額（不變），匯費是公司另外負擔、單獨列一欄，
       // 不會加進支出金額裡；同一個收款人合併付款時，匯費只算一次（放在該收款人第一筆）。
@@ -5381,19 +5412,32 @@ document.getElementById("fang-pay-btn-bankbatch").addEventListener("click",()=>{
   aoa.push([null,"付款行通匯代碼",null,null,"付款人帳號",null,"付款人統編",null,"付款人戶名"]);
   aoa.push([null,"收款行通匯代碼","收款人帳號\n(最多16位)","收款人統編\n(最多10位)","實際匯款金額\nex:1元→1","收款人姓名\n(最多35個中文字)","是否電告\n0:不通知\n1:e-mail","電告設備號碼X(50)","手續費方式\n15:匯費外加\n13:匯費內扣","備註\n(最多25個中文字)"]);
 
+  // 同一個收款人（同一個帳戶）如果有好幾筆退款，金額要合併加總成一列，不能重複列出同一個帳戶。
+  const groups=new Map();
+  const order=[];
   refundRows.forEach(row=>{
-    const feeMode=row.transferFee>0?15:0;
+    const key=row.receiver||row.bankAccount;
+    if(!groups.has(key)){ groups.set(key,[]); order.push(key); }
+    groups.get(key).push(row);
+  });
+
+  order.forEach(key=>{
+    const list=groups.get(key);
+    const first=list[0];
+    const totalAmt=list.reduce((s,r)=>s+r.amount,0);
+    const feeMode=first.transferFee>0?15:0;
+    const note=list.length===1?first.desc.slice(0,25):`${first.receiver||""}-合併${list.length}筆退押金`.slice(0,25);
     aoa.push([
       null,
-      row.bankRoutingCode||"",
-      row.bankAccount||"",
-      row.payeeTaxId||"",
-      row.amount,
-      row.receiver||"",
+      first.bankRoutingCode||"",
+      first.bankAccount||"",
+      first.payeeTaxId||"",
+      totalAmt,
+      first.receiver||"",
       "0",
       "",
       feeMode,
-      row.desc.slice(0,25),
+      note,
     ]);
   });
 

@@ -5305,7 +5305,8 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     sheetGroups[sheetName].push(row);
   });
 
-  // 退款單依部門分成各自工作頁
+  // 退款單依部門分成各自工作頁，每個部門一個分頁（不合併），
+  // 部門內部再依國內/國外匯款分開放（國內在前，中間空5列，國外在後）。
   const refundRows=rows.filter(r=>r.source==="退款單");
   const DEPT_ORDER=["房管處","短租處","業務處"];
   const deptRefundGroups={};
@@ -5314,7 +5315,8 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     if(!deptRefundGroups[dept]) deptRefundGroups[dept]=[];
     deptRefundGroups[dept].push(row);
   });
-  [...DEPT_ORDER,...Object.keys(deptRefundGroups).filter(d=>!DEPT_ORDER.includes(d))].forEach(dept=>{
+  const deptOrderFull=[...DEPT_ORDER,...Object.keys(deptRefundGroups).filter(d=>!DEPT_ORDER.includes(d))];
+  deptOrderFull.forEach(dept=>{
     if(deptRefundGroups[dept]?.length)
       sheetGroups[`退款單-${dept}`]=deptRefundGroups[dept];
   });
@@ -5329,13 +5331,12 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
     const rows=sheetGroups[sheetName];
 
     const aoa=[];
-    aoa.push(["明細","單號","收入","支出","匯費","戶名","退款金額","收款帳號","部門編號"]);
+    aoa.push(["明細","單號","收入","支出","匯費","戶名","退款金額"]);
 
     if(sheetName.startsWith("退款單-")){
-      // 退款金額＝退款單上的總金額（不變）；支出＝退款金額（不額外加匯費），
-      // 讓「支出」等於網銀批次上的「實際匯款金額」——匯費由公司另外從自己帳戶扣（外加），
-      // 不會反映在這筆的支出金額裡，匯費另外列在獨立的「匯費」欄位供對帳/立傳票用。
-      // 同一個收款人合併退款時，匯費只算一次（放在該收款人第一筆），跟請款單的處理原則一致。
+      // 退款金額＝退款單上的總金額（不變）；支出＝退款金額＋匯費（不是國泰銀行才會有這15元匯費，
+      // 是國泰銀行的話匯費是0，支出就會等於退款金額）；匯費欄位本身不用另外填數值，因為已經算進支出裡了；
+      // 同一收款人合併退款時，匯費只算一次（放在該收款人第一筆），跟請款單的處理原則一致。
       // 國內、國外匯款要分開放：國內的排在前面，中間空5列，國外的排在最後面。
       function buildRefundRows(list){
         const out=[];
@@ -5351,8 +5352,9 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
         receiverOrder.forEach(receiver=>{
           const group=receiverGroups[receiver];
           group.forEach((row,idx)=>{
-            const fee=idx===0&&row.transferFee>0?row.transferFee:null;
-            out.push([row.desc,row.orderNo,null,row.amount,fee,row.receiver||"",row.amount,row.bankAccount||"",row.deptNo||""]);
+            const hasFee=idx===0&&row.transferFee>0;
+            const expense=row.amount+(hasFee?row.transferFee:0);
+            out.push([row.desc,row.orderNo,null,expense,null,row.receiver||"",row.amount]);
           });
         });
         return out;
@@ -5383,13 +5385,13 @@ document.getElementById("fang-pay-btn-download").addEventListener("click",()=>{
         const group=receiverGroups[receiver];
         group.forEach((row,idx)=>{
           const fee=idx===0&&row.transferFee>0?row.transferFee:null;
-          aoa.push([row.desc,row.orderNo,null,row.amount,fee,row.accountName||"",null,"",row.deptNo||""]);
+          aoa.push([row.desc,row.orderNo,null,row.amount,fee,row.accountName||"",null]);
         });
       });
     }
 
     const ws=XLSX.utils.aoa_to_sheet(aoa);
-    ws["!cols"]=[{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:16},{wch:14},{wch:18},{wch:10}];
+    ws["!cols"]=[{wch:50},{wch:20},{wch:12},{wch:12},{wch:8},{wch:16},{wch:14}];
     XLSX.utils.book_append_sheet(wb,ws,sheetName.slice(0,31));
   });
 
@@ -5412,33 +5414,51 @@ document.getElementById("fang-pay-btn-bankbatch").addEventListener("click",()=>{
   aoa.push([null,"付款行通匯代碼",null,null,"付款人帳號",null,"付款人統編",null,"付款人戶名"]);
   aoa.push([null,"收款行通匯代碼","收款人帳號\n(最多16位)","收款人統編\n(最多10位)","實際匯款金額\nex:1元→1","收款人姓名\n(最多35個中文字)","是否電告\n0:不通知\n1:e-mail","電告設備號碼X(50)","手續費方式\n15:匯費外加\n13:匯費內扣","備註\n(最多25個中文字)"]);
 
-  // 同一個收款人（同一個帳戶）如果有好幾筆退款，金額要合併加總成一列，不能重複列出同一個帳戶。
-  const groups=new Map();
-  const order=[];
+  // 依房管處→短租處→業務處順序排列，部門之間空3列方便出納辨識。
+  const DEPT_ORDER=["房管處","短租處","業務處"];
+  const deptGroups={};
   refundRows.forEach(row=>{
-    const key=row.receiver||row.bankAccount;
-    if(!groups.has(key)){ groups.set(key,[]); order.push(key); }
-    groups.get(key).push(row);
+    const dept=row.dept||"其他";
+    if(!deptGroups[dept]) deptGroups[dept]=[];
+    deptGroups[dept].push(row);
   });
+  const deptOrderFull=[...DEPT_ORDER,...Object.keys(deptGroups).filter(d=>!DEPT_ORDER.includes(d))];
 
-  order.forEach(key=>{
-    const list=groups.get(key);
-    const first=list[0];
-    const totalAmt=list.reduce((s,r)=>s+r.amount,0);
-    const feeMode=first.transferFee>0?15:0;
-    const note=list.length===1?first.desc.slice(0,25):`${first.receiver||""}-合併${list.length}筆退押金`.slice(0,25);
-    aoa.push([
-      null,
-      first.bankRoutingCode||"",
-      first.bankAccount||"",
-      first.payeeTaxId||"",
-      totalAmt,
-      first.receiver||"",
-      "0",
-      "",
-      feeMode,
-      note,
-    ]);
+  deptOrderFull.forEach((dept,di)=>{
+    const deptRows=deptGroups[dept];
+    if(!deptRows||!deptRows.length) return;
+    if(di>0){
+      for(let i=0;i<3;i++) aoa.push([]); // 部門之間空3列
+    }
+
+    // 同一個收款人（同一個帳戶）如果有好幾筆退款，金額要合併加總成一列，不能重複列出同一個帳戶。
+    const groups=new Map();
+    const order=[];
+    deptRows.forEach(row=>{
+      const key=row.receiver||row.bankAccount;
+      if(!groups.has(key)){ groups.set(key,[]); order.push(key); }
+      groups.get(key).push(row);
+    });
+
+    order.forEach(key=>{
+      const list=groups.get(key);
+      const first=list[0];
+      const totalAmt=list.reduce((s,r)=>s+r.amount,0);
+      const feeMode=first.transferFee>0?15:0;
+      const note=list.length===1?first.desc.slice(0,25):`${first.receiver||""}-合併${list.length}筆退押金`.slice(0,25);
+      aoa.push([
+        null,
+        first.bankRoutingCode||"",
+        String(first.bankAccount||"").replace(/\D/g,""),
+        first.payeeTaxId||"",
+        totalAmt,
+        first.receiver||"",
+        "0",
+        "",
+        feeMode,
+        note,
+      ]);
+    });
   });
 
   const ws=XLSX.utils.aoa_to_sheet(aoa);

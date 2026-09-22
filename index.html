@@ -3581,8 +3581,9 @@ function parseRefundVoucherXlsx(data){
   if(hi===-1) throw new Error("找不到「退款單流水號」欄位，請確認是退款單格式");
   const headers=aoa[hi];
   const col=n=>headers.indexOf(n);
+  const hasTypeCol=col("退款種類")>=0;
   return aoa.slice(hi+1)
-    .filter(r=>r[col("退款單流水號")]!=null && r[col("退款種類")]==="押金")
+    .filter(r=>r[col("退款單流水號")]!=null && (!hasTypeCol || r[col("退款種類")]==="押金"))
     .map(r=>{
       const note=String(r[col("此筆請款備註")]||"").trim();
       const total=Number(r[col("總金額")])||0;

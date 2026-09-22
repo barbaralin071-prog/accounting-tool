@@ -3365,11 +3365,16 @@ function parseRefundNote(note){
   const deposit=parseFloat(dm[1]);
   const afterDeposit=note.slice(dm.index+dm[0].length);
 
+  // 金額一定要緊跟在明確的費用類型關鍵字後面才算數，不能只看「非數字」就當作文字部分——
+  // 因為房源/房號本身常常含數字（例如「汀州188」「信義186」「3A」），如果只排除數字字元，
+  // 遇到「汀州188 3A電費1700」這種一筆備註裡列出好幾個房源電費的情況，
+  // 會把房源名稱裡的「188」誤判成金額，把真正的電費「1700」整個漏掉。
+  const FEE_KEYWORDS="電費|代收電費|匯費|延後退房費用|違約金|清潔費|罰款|服務費|水費|其他費用";
   let fee=0, signedSum=0; // fee給房管年租那邊用(維持原本驗證過的用法)；signedSum用來算短租這邊的淨電費
-  const re=/([+\-])([^\d+\-]{0,12}?)(\d+(?:\.\d+)?)/g;
+  const re=new RegExp(`([+\\-])(.*?)(${FEE_KEYWORDS})(\\d+(?:\\.\\d+)?)`,"g");
   let m;
   while((m=re.exec(afterDeposit))!==null){
-    const sign=m[1], label=m[2], amt=parseFloat(m[3]);
+    const sign=m[1], label=m[3], amt=parseFloat(m[4]);
     if(label.includes("匯費")){
       fee=amt; // 匯費不算進電費淨額，只給房管年租那邊用
     }else{

@@ -564,6 +564,25 @@ button.btn.ghost:hover{background:var(--accent-soft);}
     </div>
   </div>
 
+  <!-- ── 房管退款立帳檔，只抓131450-01（代付款-雜項），方法跟房管收入/支出立帳相同 ── -->
+  <div class="card" id="fang-refund2-lizhang-card" style="margin-top:20px;display:none;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:10px;">📥 產生立帳檔（房管退款）</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      下面每一列對應到剛才下載的「一個傳票檔案」，請照你實際匯入文中的順序，把每個檔案各自拿到的真正傳票號碼填進去，
+      再產生立帳檔（一個檔案對應一個立帳檔）。立帳檔只會抓傳票裡科目代號為 <strong>131450-01</strong>（代付款-雜項）的那些列。
+      立帳單號的流水序號跟房管收入/支出、業務處、社宅共用同一份記錄，同一天不管哪個部門立帳，序號都會連續編號、不會撞。
+    </div>
+    <div id="fang-refund2-lizhang-inputs"></div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;">
+      <span style="font-size:11.5px;color:var(--ink-faint);">序號會記住每個交易日期上次用到哪裡，同一個日期分好幾次處理也不會撞號</span>
+      <div style="display:flex;gap:8px;">
+        <button class="btn secondary" id="fang-refund2-btn-lizhang-clear" title="清空所有交易日期記住的序號，重新從1001起算">清除序號記錄</button>
+        <button class="btn primary" id="fang-refund2-btn-lizhang">產生立帳檔</button>
+      </div>
+    </div>
+    <div class="errbox" id="fang-refund2-lizhang-err"></div>
+  </div>
+
   <!-- ── 房管屋主出款（依代管報表Excel + 電子發票）── -->
   <div style="margin-top:28px;padding-top:20px;border-top:2px solid var(--border);">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
@@ -4459,7 +4478,7 @@ function buildExpenseVoucherLines(row){
   const houseMatch=matchHousingFromDesc(desc);
   const code=houseMatch?houseMatch.code:"";
 
-  if(desc.includes("退押金")){
+  if(desc.includes("退押金")||desc.includes("退租押金")){
     // 退押金：131450-01 借1（押金金額）／1110-01 貸2（押金金額）
     // 如果這筆有匯費，要多一列 6270 借1（匯費金額），貸方 1110-01 金額要含匯費一起；
     // 匯費那列的客戶供應商代號跟摘要都要跟其他兩列一樣，不是空白代號、也不是「匯款手續費」這種固定字樣。
@@ -4616,7 +4635,7 @@ const CITY_KEYS_V=["台北市","新北市","台中市","台南市","高雄市","
 function classifyRow(row){
   const orderNo=row.orderNo||"";
   const desc=row.desc||"";
-  if(desc.includes("退押金")){
+  if(desc.includes("退押金")||desc.includes("退租押金")){
     const houseMatch=matchHousingFromDesc(desc);
     const rentMode=houseMatch?houseMatch.rentMode:"";
     return rentMode==="短租管理" ? "退押金_短租" : "退押金_房管";
@@ -4720,10 +4739,40 @@ function buildAndDownloadExpenseCategoryVouchers(rows, allowedCategories, batche
 }
 
 /* ══════════════════════════════════════
-   房管退款傳票：獨立區塊，只抓「退押金_房管」這個分類
+   房管退款傳票：獨立區塊。
+   只要說明文字含「退押金」或「退租押金」就算，不管這個房源登記的服務模式是什麼——
+   因為房管處實務上這些退押作業本來就是房管自己在處理，不用管房源資料庫裡登記的是包租還是代管。
+   如果房源資料庫查到這個房源的服務模式看起來像短租（rentMode="短租管理"或服務模式含「包租」），
+   會在摘要前面加上「⚠請確認(短租/包租房源)-」標記，並且整份Excel這幾列會標成黃底，提醒人工複核，
+   但還是照樣產生分錄，不會被排除掉。
 ══════════════════════════════════════ */
 let fangRefund2VoucherBatches=new Map();
 let fangRefund2State={rows:[]};
+
+function isFangRefundRow(row){
+  const desc=row.desc||"";
+  return desc.includes("退押金")||desc.includes("退租押金");
+}
+
+function buildFangRefund2VoucherRows(rows){
+  const matched=rows.filter(isFangRefundRow);
+  const vRows=[];
+  matched.forEach(row=>{
+    const houseMatch=matchHousingFromDesc(row.desc);
+    const looksShortTerm=houseMatch&&(houseMatch.rentMode==="短租管理"||String(houseMatch.service||"").includes("包租"));
+    const code=houseMatch?houseMatch.code:"";
+    const amt=row.expense;
+    const fee=row.fee||0;
+    const flagPrefix=looksShortTerm?"⚠請確認(短租/包租房源)-":"";
+    const summary=flagPrefix+row.desc;
+    const dateStr=row.rocDateStr||TODAY_ROC;
+    const dept=row.deptNo||"";
+    vRows.push([115,"DEFAULT",3,dateStr,"131450-01",code,1,amt,summary,dept,liChong("131450-01")]);
+    if(fee>0) vRows.push([115,"DEFAULT",3,dateStr,"6270",code,1,fee,summary,dept,liChong("6270")]);
+    vRows.push([115,"DEFAULT",3,dateStr,"1110-01",code,2,amt+fee,summary,dept,liChong("1110-01")]);
+  });
+  return vRows;
+}
 
 bindDropzone("fang-refund2-dz-cashflow","fang-refund2-file-cashflow",async(file,dz)=>{
   clearErr("fang-refund2-err");
@@ -4733,21 +4782,130 @@ bindDropzone("fang-refund2-dz-cashflow","fang-refund2-file-cashflow",async(file,
     fangRefund2State.rows=rows;
     dz.classList.add("loaded");
     dz.querySelector(".dz-label").textContent="✓ "+file.name;
-    const matchCount=rows.filter(r=>classifyRow(r)==="退押金_房管").length;
+    const matchedRows=rows.filter(isFangRefundRow);
+    const flaggedCount=matchedRows.filter(row=>{
+      const hm=matchHousingFromDesc(row.desc);
+      return hm&&(hm.rentMode==="短租管理"||String(hm.service||"").includes("包租"));
+    }).length;
     document.getElementById("fang-refund2-status").textContent=
-      matchCount>0 ? `找到 ${matchCount} 筆房管退押金，可以下載傳票` : "這份金流表裡沒有找到房管退押金的資料";
-    document.getElementById("fang-refund2-btn-voucher").disabled=matchCount===0;
+      matchedRows.length>0
+        ? `找到 ${matchedRows.length} 筆房管退押金，可以下載傳票`+(flaggedCount>0?`（其中 ${flaggedCount} 筆房源登記為短租/包租，已標記提醒複核）`:"")
+        : "這份金流表裡沒有找到房管退押金的資料";
+    document.getElementById("fang-refund2-btn-voucher").disabled=matchedRows.length===0;
   }catch(e){ showErr("fang-refund2-err",e.message); }
 });
 
 document.getElementById("fang-refund2-btn-voucher").addEventListener("click",()=>{
-  const{totalFiles}=buildAndDownloadExpenseCategoryVouchers(fangRefund2State.rows, ["退押金_房管"], fangRefund2VoucherBatches);
-  if(totalFiles===0){
+  const vRows=buildFangRefund2VoucherRows(fangRefund2State.rows);
+  if(!vRows.length){
     showErr("fang-refund2-err","沒有產生任何檔案");
-  }else{
-    clearErr("fang-refund2-err");
-    document.getElementById("fang-refund2-status").textContent=`✓ 已下載 ${totalFiles} 個傳票檔案`;
+    return;
   }
+  const byDate=new Map();
+  vRows.forEach(r=>{
+    const d=r[3];
+    if(!byDate.has(d)) byDate.set(d,[]);
+    byDate.get(d).push(r);
+  });
+  let totalFiles=0;
+  [...byDate.keys()].sort().forEach(dateStr=>{
+    const ws=buildVoucher49Sheet(byDate.get(dateStr));
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
+    const dateSafe=String(dateStr).replace(/\//g,"-");
+    const fileKey=`退押金_房管_${dateSafe}`;
+    XLSX.writeFile(wb,`${fileKey}.xlsx`);
+    fangRefund2VoucherBatches.set(fileKey, byDate.get(dateStr));
+    totalFiles++;
+  });
+  clearErr("fang-refund2-err");
+  document.getElementById("fang-refund2-status").textContent=`✓ 已下載 ${totalFiles} 個傳票檔案`;
+  renderFangRefund2LizhangInputs();
+});
+
+/* ══════════════════════════════════════
+   房管退款立帳檔：只抓131450-01（代付款-雜項），
+   邏輯跟房管收入/支出立帳完全一樣，序號跟其他部門共用同一份記錄。
+══════════════════════════════════════ */
+const LIZHANG_CODES_FANG_REFUND=["131450-01"];
+
+function renderFangRefund2LizhangInputs(){
+  const card=document.getElementById("fang-refund2-lizhang-card");
+  const wrap=document.getElementById("fang-refund2-lizhang-inputs");
+  if(!fangRefund2VoucherBatches.size){ card.style.display="none"; return; }
+  card.style.display="block";
+  wrap.innerHTML="";
+  [...fangRefund2VoucherBatches.keys()].sort().forEach(fileKey=>{
+    const rows=fangRefund2VoucherBatches.get(fileKey);
+    const rowCount=rows.length;
+    const lizhangCount=rows.filter(r=>LIZHANG_CODES_FANG_REFUND.includes(r[4])).length;
+    const div=document.createElement("div");
+    div.style.cssText="display:flex;align-items:center;gap:10px;margin-bottom:8px;";
+    div.innerHTML=`
+      <span style="min-width:280px;font-size:13px;">${fileKey}.xlsx</span>
+      <span style="font-size:12px;color:var(--ink-faint);min-width:140px;">共${rowCount}列，其中${lizhangCount}列需立帳</span>
+      <input type="text" class="fang-refund2-lizhang-vnum" data-file="${fileKey}" placeholder="文中回傳的真正傳票號碼" style="flex:1;max-width:260px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+document.getElementById("fang-refund2-btn-lizhang").addEventListener("click",()=>{
+  clearErr("fang-refund2-lizhang-err");
+  const inputs=[...document.querySelectorAll(".fang-refund2-lizhang-vnum")];
+  const vnumByFile={};
+  inputs.forEach(inp=>{
+    const v=inp.value.trim();
+    if(v) vnumByFile[inp.dataset.file]=v;
+  });
+  if(!Object.keys(vnumByFile).length){
+    showErr("fang-refund2-lizhang-err","請至少填一個檔案對應的真正傳票號碼");
+    return;
+  }
+
+  const seqMap=fangLoadLizhangSeqMap();
+  let anyOutput=false;
+
+  Object.keys(vnumByFile).sort().forEach(fileKey=>{
+    const voucherRows=fangRefund2VoucherBatches.get(fileKey);
+    if(!voucherRows) return;
+    const realVoucherNo=vnumByFile[fileKey];
+
+    const outRows=[];
+    voucherRows.forEach((r,idx)=>{
+      const acctCode=r[4];
+      if(!LIZHANG_CODES_FANG_REFUND.includes(acctCode)) return;
+      const rowDate=r[3];
+      const seqInFile=(seqMap[rowDate]||1000)+1;
+      seqMap[rowDate]=seqInFile;
+      const lizhangDateRoc=String(rowDate).replace(/\//g,"");
+      const lizhangNo=lizhangDateRoc+String(seqInFile);
+      const seqNo=String(idx+1).padStart(4,"0");
+      outRows.push([
+        lizhangNo, acctCode, rowDate, r[5], realVoucherNo, seqNo, r[7], r[8], r[9]||"",
+      ]);
+    });
+
+    if(!outRows.length) return;
+    anyOutput=true;
+    const ws=buildLizhang13Sheet(outRows);
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb,ws,"立帳檔");
+    XLSX.writeFile(wb, `立帳檔_房管退款_${fileKey}.xlsx`);
+  });
+
+  if(!anyOutput){
+    showErr("fang-refund2-lizhang-err","填的這些檔案裡，沒有任何一列的科目代號是 131450-01，沒有東西可以產生立帳檔");
+  }else{
+    fangSaveLizhangSeqMap(seqMap);
+    clearErr("fang-refund2-lizhang-err");
+  }
+});
+
+document.getElementById("fang-refund2-btn-lizhang-clear").addEventListener("click",()=>{
+  fangSaveLizhangSeqMap({});
+  clearErr("fang-refund2-lizhang-err");
+  showErr("fang-refund2-lizhang-err","已清空所有交易日期記住的序號（跟其他部門共用同一份），下次產生立帳檔會從1001重新起算");
 });
 
 /* ══════════════════════════════════════

@@ -4203,14 +4203,38 @@ function finalizeOwnerPayoutResults(partials, cashflowRows){
 
 // 解析「房管屋主出款」Excel（欄位：年月／房源名稱／房客摘要／房客姓名／房客租金／代收押金／代付／
 // 業績(系統服務費含稅)／代管(代管費含稅)／付款），依「年月+房源名稱」分組成每個房源一組
+// ——同時也支援「稽核表」格式的欄位名稱（房號/代收/代付-退款/代付-請款/業績/代管費/房東服務費/修繕費），
+// 兩種格式的欄位名稱、順序都不一樣，用別名對照表統一處理，不管上傳哪一種都能正確讀到。
 function parseOwnerPayoutXlsx(data){
   const wb=XLSX.read(data,{type:"array"});
   const ws=wb.Sheets[wb.SheetNames[0]];
   const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
   const hi=aoa.findIndex(r=>r&&r.some(c=>c==="房源名稱"));
   if(hi===-1) throw new Error("找不到「房源名稱」欄位，請確認是房管屋主出款的格式");
-  const headers=aoa[hi];
-  const col=n=>headers.indexOf(n);
+  const headers=aoa[hi].map(h=>String(h||"").trim());
+
+  // 別名對照：左邊是舊格式的標準名稱，右邊是這個標準名稱可能對應到的其他欄位標題寫法（依序嘗試，找到第一個存在的就用）。
+  const ALIASES={
+    "房客摘要":["房客摘要","房號"],
+    "代收押金":["代收押金","代收"],
+    "業績(系統服務費含稅)":["業績(系統服務費含稅)","業績"],
+    "代管(代管費含稅)":["代管(代管費含稅)","代管費","代管(代管費含稅)"],
+    "房東服務費含稅":["房東服務費含稅","房東服務費"],
+    "修繕費含稅":["修繕費含稅","修繕費\n(額外項目單)","修繕費(額外項目單)","修繕費"],
+  };
+  function col(standardName){
+    const candidates=ALIASES[standardName]||[standardName];
+    for(const name of candidates){
+      const idx=headers.indexOf(name);
+      if(idx>=0) return idx;
+    }
+    return -1;
+  }
+  // 「代付」比較特殊：舊格式是單一欄位，稽核表格式拆成「代付-退款」「代付-請款」兩欄，
+  // 兩欄都要各自收集(每一筆都要各自變成一行代付分錄，不能合併)，不能只用別名對照隨便挑一欄。
+  const advanceColNames=headers.includes("代付")?["代付"]:
+    [...(headers.includes("代付-退款")?["代付-退款"]:[]), ...(headers.includes("代付-請款")?["代付-請款"]:[])];
+
   const rows=aoa.slice(hi+1).filter(r=>r[col("房源名稱")]);
 
   // 空白欄位一律當作「這一列沒有這個資料」，不是0。
@@ -4250,10 +4274,12 @@ function parseOwnerPayoutXlsx(data){
       // 一筆就要在傳票上產生一行，金額分開，不合併。
       depositEntries:[],
       advanceEntries:[],
-      systemFeeGross:smartSum(collect("業績(系統服務費含稅)")),
-      mgmtFeeGross:smartSum(collect("代管(代管費含稅)")),
-      landlordFeeGross:smartSum(collect("房東服務費含稅")),
-      repairFeeGross:smartSum(collect("修繕費含稅")),
+      // 這幾個欄位在內部計算邏輯裡，一律當作「正數的應扣總額」處理；但有些來源檔案（例如稽核表格式）
+      // 習慣用負數表示「這是要扣掉的錢」，這裡統一取絕對值，不管來源用正數或負數表示都能正確算出金額。
+      systemFeeGross:Math.abs(smartSum(collect("業績(系統服務費含稅)"))),
+      mgmtFeeGross:Math.abs(smartSum(collect("代管(代管費含稅)"))),
+      landlordFeeGross:Math.abs(smartSum(collect("房東服務費含稅"))),
+      repairFeeGross:Math.abs(smartSum(collect("修繕費含稅"))),
       payment:payments.length?payments[payments.length-1]:0, // 付款不累加，取最後一個有填的值
     };
     g.rawRows.forEach(r=>{
@@ -4271,13 +4297,15 @@ function parseOwnerPayoutXlsx(data){
       if(depositVal!=null && depositVal!==0){
         group.depositEntries.push({
           name:String(r[col("房客姓名")]||"").trim(),
-          amount:depositVal,
+          amount:Math.abs(depositVal),
         });
       }
-      const advanceVal=numOrNull(r[col("代付")]);
-      if(advanceVal!=null && advanceVal!==0){
-        group.advanceEntries.push({amount:advanceVal});
-      }
+      advanceColNames.forEach(colName=>{
+        const advanceVal=numOrNull(r[headers.indexOf(colName)]);
+        if(advanceVal!=null && advanceVal!==0){
+          group.advanceEntries.push({amount:Math.abs(advanceVal)});
+        }
+      });
     });
     return group;
   });

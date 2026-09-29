@@ -643,8 +643,15 @@ button.btn.ghost:hover{background:var(--accent-soft);}
             <tbody id="fang-owner-tb"></tbody>
           </table>
         </div>
+        <div style="margin-top:10px;">
+          <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">
+            手動指定每個檔案的起始房源（選填，一行一個，依序填第2頁、第3頁...開始的房源名稱；
+            不用填第1頁，第1頁永遠從頭開始；留空就照下面「每個檔案幾筆」自動分頁）：
+          </label>
+          <textarea id="fang-owner-manual-breaks" rows="3" placeholder="例如：&#10;思源512&#10;民生東56" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:inherit;"></textarea>
+        </div>
         <div style="display:flex;justify-content:flex-end;align-items:center;gap:10px;margin-top:10px;">
-          <label style="font-size:12.5px;color:var(--ink-soft);">每個檔案幾筆房源：
+          <label style="font-size:12.5px;color:var(--ink-soft);">每個檔案幾筆房源（手動指定起始房源時，這個設定會被忽略）：
             <input type="number" id="fang-owner-page-size" value="13" min="1" style="width:60px;padding:4px 6px;border:1px solid var(--border);border-radius:6px;font-size:13px;margin-left:4px;">
           </label>
           <button class="btn primary" id="fang-owner-btn-voucher">下載房管屋主出款傳票</button>
@@ -4490,7 +4497,40 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   // 保持照原本排序後的順序，不要因為分組被打亂——用每組裡第一筆的_sortKey代表整組的順序
   pageUnits.sort((a,b)=>a[0]._sortKey-b[0]._sortKey);
 
-  const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
+  // 手動指定分界點：使用者填了「每個檔案幾筆」以外的手動起始房源清單時，優先用這個分界，
+  // 不再用固定筆數切——因為自動判斷合併出款的邏輯目前還有抓不到的例外狀況，
+  // 手動指定分界可以先繞過那些問題、確保切出來的檔案跟銀行匯款明細的頁數對得起來。
+  const manualBreaksRaw=document.getElementById("fang-owner-manual-breaks").value.trim();
+  const manualBreakNames=manualBreaksRaw?manualBreaksRaw.split("\n").map(s=>s.trim()).filter(Boolean):[];
+
+  let pageGroups;
+  if(manualBreakNames.length){
+    // 找出每個手動指定的房源名稱，在pageUnits裡第一次出現的位置，當作新檔案的起點
+    const breakIndices=[];
+    manualBreakNames.forEach(name=>{
+      const idx=pageUnits.findIndex(unit=>unit.some(u=>u.group.houseName===name));
+      if(idx<0){
+        showErr("fang-owner-err",`手動指定的分界房源「${name}」，在目前可以產生分錄的房源清單裡找不到，請確認名稱是否打錯字，或者這個房源是不是真的有出現在這次的資料裡`);
+        return;
+      }
+      breakIndices.push(idx);
+    });
+    if(breakIndices.length!==manualBreakNames.length) return; // 上面有任何一個找不到，已經顯示錯誤訊息，直接中止不下載
+
+    pageGroups=[];
+    let start=0;
+    breakIndices.forEach(idx=>{
+      pageGroups.push(pageUnits.slice(start,idx));
+      start=idx;
+    });
+    pageGroups.push(pageUnits.slice(start));
+  }else{
+    const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
+    pageGroups=[];
+    for(let i=0;i<pageUnits.length;i+=pageSizeInput){
+      pageGroups.push(pageUnits.slice(i,i+pageSizeInput));
+    }
+  }
 
   // 檔名用的日期：優先用這批金流表的統一出款日期(民國轉西元、去掉斜線)，沒有金流表才用今天
   let fileDate;
@@ -4503,9 +4543,8 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
     fileDate=new Date().toISOString().slice(0,10).replace(/-/g,"");
   }
 
-  const totalPages=Math.ceil(pageUnits.length/pageSizeInput);
-  for(let page=0; page<totalPages; page++){
-    const pageUnitsSlice=pageUnits.slice(page*pageSizeInput, (page+1)*pageSizeInput);
+  pageGroups.forEach((pageUnitsSlice,page)=>{
+    if(!pageUnitsSlice.length) return;
     const pageResults=pageUnitsSlice.flat(); // 合併出款的兩個房源攤平回個別的{group,result}，但因為上面已經確保同一組一定在同一頁，不會被拆開
     const rows=[];
     pageResults.forEach(({group,result})=>{
@@ -4519,7 +4558,7 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
     const wb=XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb,ws,"傳票累積檔");
     XLSX.writeFile(wb, `房管屋主出款_${fileDate}_${page+1}.xlsx`);
-  }
+  });
 
   clearErr("fang-owner-err");
 });

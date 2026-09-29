@@ -4469,6 +4469,26 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   // 這樣傳票檔案的分頁方式就能跟銀行匯款明細的分頁對得起來，方便逐頁核對。
   const okResults=results.filter(r=>r.result.ok); // 這個房源在金流表裡完全找不到的，已判定不產生分錄，下載時排除
 
+  // 合併出款的兩個房源（例如「萬盛68+內湖737-5」這種金流表上本來就是一筆的情況），
+  // 在切檔案的時候一定要算同一個名額、放進同一個檔案，不能被13筆分檔的邊界拆開到不同檔案，
+  // 否則銀行匯款明細的頁數會跟傳票檔案的頁數對不起來。
+  const pageUnits=[];
+  const processed=new Set();
+  okResults.forEach(r=>{
+    if(processed.has(r)) return;
+    if(r.result.matchedWith){
+      const partnerUnit=okResults.find(o=>o.result===r.result.matchedWith);
+      if(partnerUnit && !processed.has(partnerUnit)){
+        processed.add(r);
+        processed.add(partnerUnit);
+        pageUnits.push([r,partnerUnit]);
+        return;
+      }
+    }
+    processed.add(r);
+    pageUnits.push([r]);
+  });
+
   const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
 
   // 檔名用的日期：優先用這批金流表的統一出款日期(民國轉西元、去掉斜線)，沒有金流表才用今天
@@ -4482,9 +4502,10 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
     fileDate=new Date().toISOString().slice(0,10).replace(/-/g,"");
   }
 
-  const totalPages=Math.ceil(okResults.length/pageSizeInput);
+  const totalPages=Math.ceil(pageUnits.length/pageSizeInput);
   for(let page=0; page<totalPages; page++){
-    const pageResults=okResults.slice(page*pageSizeInput, (page+1)*pageSizeInput);
+    const pageUnitsSlice=pageUnits.slice(page*pageSizeInput, (page+1)*pageSizeInput);
+    const pageResults=pageUnitsSlice.flat(); // 合併出款的兩個房源攤平回個別的{group,result}，但因為上面已經確保同一組一定在同一頁，不會被拆開
     const rows=[];
     pageResults.forEach(({group,result})=>{
       const dateStr=result.rocDateStr||TODAY_ROC;

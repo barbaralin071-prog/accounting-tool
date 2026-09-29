@@ -4472,22 +4472,23 @@ document.getElementById("fang-owner-btn-voucher").addEventListener("click",()=>{
   // 合併出款的兩個房源（例如「萬盛68+內湖737-5」這種金流表上本來就是一筆的情況），
   // 在切檔案的時候一定要算同一個名額、放進同一個檔案，不能被13筆分檔的邊界拆開到不同檔案，
   // 否則銀行匯款明細的頁數會跟傳票檔案的頁數對不起來。
-  const pageUnits=[];
-  const processed=new Set();
+  // 用cfIndex（這個房源對應到金流表第幾列）分組，只要兩個房源對應到同一列金流表就算同一個名額——
+  // 這樣比只看matchedWith配對更穩固，就算合併配對的判斷本身有問題，只要cfIndex一樣，還是會被歸在同一頁。
+  const byCfIndex=new Map();
+  const singleUnits=[];
   okResults.forEach(r=>{
-    if(processed.has(r)) return;
-    if(r.result.matchedWith){
-      const partnerUnit=okResults.find(o=>o.result===r.result.matchedWith);
-      if(partnerUnit && !processed.has(partnerUnit)){
-        processed.add(r);
-        processed.add(partnerUnit);
-        pageUnits.push([r,partnerUnit]);
-        return;
-      }
+    if(r.result.cfIndex!=null){
+      const key=r.result.cfIndex;
+      if(!byCfIndex.has(key)) byCfIndex.set(key,[]);
+      byCfIndex.get(key).push(r);
+    }else{
+      singleUnits.push([r]);
     }
-    processed.add(r);
-    pageUnits.push([r]);
   });
+  const groupedUnits=[...byCfIndex.values()].map(list=>list);
+  const pageUnits=[...groupedUnits, ...singleUnits];
+  // 保持照原本排序後的順序，不要因為分組被打亂——用每組裡第一筆的_sortKey代表整組的順序
+  pageUnits.sort((a,b)=>a[0]._sortKey-b[0]._sortKey);
 
   const pageSizeInput=parseInt(document.getElementById("fang-owner-page-size").value)||13;
 

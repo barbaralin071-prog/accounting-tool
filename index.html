@@ -1326,6 +1326,25 @@ button.btn.ghost:hover{background:var(--accent-soft);}
      發票勾稽 Panel
 ════════════════════════════════════════════ -->
 <div class="panel" id="panel-invcheck">
+  <div class="card" style="margin-bottom:20px;">
+    <div style="font-size:14px;font-weight:700;margin-bottom:6px;">⚙️ 電子發票號碼區間設定</div>
+    <div style="font-size:12.5px;color:var(--ink-soft);margin-bottom:10px;">
+      電子發票字軌每2個月會換一次新號碼，這裡設定目前這一期的區間，只要不換期就不用重填，瀏覽器會記住上次的設定；
+      換到新的一期時，把下面的區間改成新的號碼範圍再按「儲存設定」即可。一行一組，格式是「字軌,起始號碼,結束號碼」。
+    </div>
+    <div style="display:flex;gap:10px;align-items:flex-start;">
+      <div style="flex:1;">
+        <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin-bottom:4px;">目前期別（僅供自己標記用，不影響比對邏輯）</label>
+        <input type="text" id="invcheck-period-label" placeholder="例如：115年9-10月" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;">
+        <label style="font-size:12.5px;color:var(--ink-soft);display:block;margin:10px 0 4px;">發票號碼區間（一行一組，逗號分隔：字軌,起始號碼,結束號碼）</label>
+        <textarea id="invcheck-track-ranges" rows="4" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px;font-family:monospace;" placeholder="FV,55462650,55463649&#10;FX,32384200,32385199"></textarea>
+      </div>
+      <button class="btn primary" id="invcheck-btn-save-ranges" style="margin-top:20px;">儲存設定</button>
+    </div>
+    <div class="errbox" id="invcheck-ranges-err"></div>
+    <div id="invcheck-ranges-status" style="font-size:12px;color:var(--ink-soft);margin-top:6px;"></div>
+  </div>
+
   <div class="card">
     <div style="font-size:15px;font-weight:700;margin-bottom:6px;">
       🧾 電子發票三方勾稽
@@ -8786,6 +8805,71 @@ function parseInvcheckLedger(data){
   return map;
 }
 
+// 電子發票號碼區間：改成從瀏覽器localStorage讀取，讓會計自己輸入、換期時自己更新，
+// 不用每次換期都要改程式碼。第一次使用、還沒存過設定時，用115年9-10月的區間當預設值。
+const INVCHECK_RANGES_STORAGE_KEY="invcheck_track_ranges_v1";
+const INVCHECK_PERIOD_STORAGE_KEY="invcheck_period_label_v1";
+const DEFAULT_TRACK_RANGES_TEXT="FV,55462650,55463649\nFX,32384200,32385199";
+
+function parseTrackRangesText(text){
+  const lines=text.trim().split("\n").map(l=>l.trim()).filter(Boolean);
+  const ranges=[];
+  for(const line of lines){
+    const parts=line.split(",").map(s=>s.trim());
+    if(parts.length!==3) throw new Error(`這一行格式不對，應該是「字軌,起始號碼,結束號碼」：${line}`);
+    const[prefix,minStr,maxStr]=parts;
+    const min=parseInt(minStr,10), max=parseInt(maxStr,10);
+    if(!/^[A-Z]{2}$/.test(prefix)) throw new Error(`字軌格式不對，應該是2個大寫英文字母：${line}`);
+    if(isNaN(min)||isNaN(max)) throw new Error(`起始或結束號碼不是數字：${line}`);
+    if(min>max) throw new Error(`起始號碼不能比結束號碼大：${line}`);
+    ranges.push({prefix,min,max});
+  }
+  return ranges;
+}
+
+function isElectronicInvoiceNo(no){
+  const m=/^([A-Z]{2})(\d+)$/.exec(no);
+  if(!m) return false;
+  const prefix=m[1], num=parseInt(m[2],10);
+  return invcheckActiveRanges.some(r=>r.prefix===prefix&&num>=r.min&&num<=r.max);
+}
+
+// 載入儲存過的設定，沒有的話用預設值
+let invcheckActiveRanges=[];
+(function initInvcheckRanges(){
+  const savedRanges=localStorage.getItem(INVCHECK_RANGES_STORAGE_KEY);
+  const savedPeriod=localStorage.getItem(INVCHECK_PERIOD_STORAGE_KEY);
+  const rangesText=savedRanges||DEFAULT_TRACK_RANGES_TEXT;
+  document.getElementById("invcheck-track-ranges").value=rangesText;
+  document.getElementById("invcheck-period-label").value=savedPeriod||"";
+  try{
+    invcheckActiveRanges=parseTrackRangesText(rangesText);
+    document.getElementById("invcheck-ranges-status").textContent=savedRanges?"（已套用上次儲存的設定）":"（尚未儲存過設定，目前顯示的是預設值）";
+  }catch(e){
+    invcheckActiveRanges=[];
+  }
+})();
+
+document.getElementById("invcheck-btn-save-ranges").addEventListener("click",()=>{
+  clearErr("invcheck-ranges-err");
+  const rangesText=document.getElementById("invcheck-track-ranges").value;
+  const periodLabel=document.getElementById("invcheck-period-label").value.trim();
+  try{
+    const ranges=parseTrackRangesText(rangesText);
+    if(!ranges.length) throw new Error("至少要輸入一組區間");
+    invcheckActiveRanges=ranges;
+    localStorage.setItem(INVCHECK_RANGES_STORAGE_KEY,rangesText);
+    localStorage.setItem(INVCHECK_PERIOD_STORAGE_KEY,periodLabel);
+    document.getElementById("invcheck-ranges-status").textContent=`✓ 已儲存${periodLabel?`（${periodLabel}）`:""}，瀏覽器會記住這個設定`;
+    // 如果三份檔案都已經上傳過，區間改變後要重新跑一次比對，不然畫面上還是舊區間的結果
+    if(invcheckState.invoice&&invcheckState.media&&invcheckState.ledger){
+      invcheckMaybeRun();
+    }
+  }catch(e){
+    showErr("invcheck-ranges-err",e.message);
+  }
+});
+
 function invcheckMaybeRun(){
   const{invoice,media,ledger}=invcheckState;
   if(!invoice||!media||!ledger) return;
@@ -8812,10 +8896,10 @@ function invcheckMaybeRun(){
   ledger.forEach((entries,no)=>{
     const ledgerTaxSum=entries.reduce((s,e)=>s+e.credit,0);
     const voucherNo=entries.map(e=>e.voucherNo).join("、");
-    const isElectronicTrack=/^FV/.test(no); // FV是RAGIC/易發票唯一會用到的字軌
+    const isElectronicTrack=isElectronicInvoiceNo(no); // 用實際發放區間判斷，比只看字軌開頭更精準
 
     if(!isElectronicTrack){
-      cat1HandIssued.push({no, ledgerTax:ledgerTaxSum, voucherNo, note:"發票號碼不是「FV」開頭(FV是RAGIC/易發票專用字軌)，屬於手開發票，這部分的稅額只能採信分類帳自己的登打金額，請人工核對是否正確"});
+      cat1HandIssued.push({no, ledgerTax:ledgerTaxSum, voucherNo, note:"發票號碼不在RAGIC/易發票9-10月實際發放的區間內(FV 55462650~55463649、FX 32384200~32385199)，屬於手開發票，這部分的稅額只能採信分類帳自己的登打金額，請人工核對是否正確"});
       handIssuedTaxSum+=ledgerTaxSum;
       return;
     }
@@ -8826,7 +8910,7 @@ function invcheckMaybeRun(){
     const mediaTax=mediaEntry?Math.round(mediaEntry.tax):null;
 
     if(!ragicEntry&&!mediaEntry){
-      cat3Mismatch.push({no, ledgerTax:ledgerTaxSum, ragicTax:"(無資料)", mediaTax:"(無資料)", voucherNo, note:"發票號碼是FV開頭(照理說該是電子發票)，但RAGIC、易發票裡都完全找不到這個號碼，可能是發票號碼登打錯誤"});
+      cat3Mismatch.push({no, ledgerTax:ledgerTaxSum, ragicTax:"(無資料)", mediaTax:"(無資料)", voucherNo, note:"發票號碼落在電子發票的實際發放區間內(照理說該是電子發票)，但RAGIC、易發票裡都完全找不到這個號碼，可能是發票號碼登打錯誤"});
       return;
     }
 

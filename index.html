@@ -1405,6 +1405,15 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </table>
     </div>
 
+    <div style="font-size:14px;font-weight:700;margin:20px 0 10px;">🧮 稅額平衡驗證（就算沒有異常，這裡的數字也應該要能兜起來）</div>
+    <div style="overflow-x:auto;">
+      <table class="tbl">
+        <thead><tr><th>組成部分</th><th>稅額加總</th></tr></thead>
+        <tbody id="invcheck-balance-tb"></tbody>
+      </table>
+    </div>
+    <div id="invcheck-balance-result" style="margin-top:8px;font-size:13px;font-weight:700;"></div>
+
     <div style="font-size:14px;font-weight:700;margin:20px 0 10px;color:#C0392B;">③ 分類帳金額不符——分類帳打錯了（最重要，優先處理這裡）</div>
     <div class="bal" id="invcheck-bal-cat3">—</div>
     <div style="overflow-x:auto;margin-top:10px;">
@@ -8787,32 +8796,48 @@ function invcheckMaybeRun(){
   // 這種情況不是真的算錯，只是四捨五入規則不同，設定容許誤差、差在這個範圍內就不算異常。
   const TAX_TOLERANCE=parseInt(document.getElementById("invcheck-tolerance").value,10)||0;
 
-  // 依「分類帳、RAGIC、易發票」三者是否各自有資料，分成3種主要情況：
-  // ① 分類帳有，RAGIC跟易發票都找不到 → 手開發票，人工核對登打是否正確
+  // 依「分類帳、RAGIC、易發票」三者的關係，分成3種主要情況：
+  // ① 手開發票：發票號碼不是「FV」開頭(FV是RAGIC/易發票專用的字軌，兩邊都只會出現FV開頭的號碼)，
+  //    直接用字軌規律判斷，不是用「找不找得到」這種間接方式——這樣分類更可靠，不會因為比對邏輯的
+  //    誤差而錯判。凡是不是FV開頭的，一定是手開發票，這部分的稅額只能直接採用分類帳自己記錄的金額。
   // ② 分類帳沒有，RAGIC或易發票有 → 電子發票尚未入帳
-  // ③ 三者(或至少分類帳+其中一邊)都有資料，但金額對不起來 → 分類帳打錯了
+  // ③ 發票號碼是FV開頭(照理說是電子發票)，但金額跟RAGIC/易發票對不起來(或FV開頭卻兩邊都找不到)
+  //    → 分類帳打錯了，或發票號碼本身登打錯誤
   const cat1HandIssued=[];
   const cat2NotPosted=[];
   const cat3Mismatch=[];
+  let matchedTaxSum=0; // 電子發票(FV開頭)且比對正常的分類帳稅額加總，供整體餘額驗證用
+  let handIssuedTaxSum=0; // 手開發票(非FV開頭)的分類帳稅額加總，供整體餘額驗證用
 
   ledger.forEach((entries,no)=>{
     const ledgerTaxSum=entries.reduce((s,e)=>s+e.credit,0);
     const voucherNo=entries.map(e=>e.voucherNo).join("、");
+    const isElectronicTrack=/^FV/.test(no); // FV是RAGIC/易發票唯一會用到的字軌
+
+    if(!isElectronicTrack){
+      cat1HandIssued.push({no, ledgerTax:ledgerTaxSum, voucherNo, note:"發票號碼不是「FV」開頭(FV是RAGIC/易發票專用字軌)，屬於手開發票，這部分的稅額只能採信分類帳自己的登打金額，請人工核對是否正確"});
+      handIssuedTaxSum+=ledgerTaxSum;
+      return;
+    }
+
     const ragicEntry=invoice.get(no);
     const mediaEntry=media.get(no);
     const ragicTax=ragicEntry?Math.round(ragicEntry.tax):null;
     const mediaTax=mediaEntry?Math.round(mediaEntry.tax):null;
 
     if(!ragicEntry&&!mediaEntry){
-      cat1HandIssued.push({no, ledgerTax:ledgerTaxSum, voucherNo, note:"RAGIC、易發票都找不到這張發票，屬於手開發票，請人工核對分類帳登打的稅額是否正確"});
+      cat3Mismatch.push({no, ledgerTax:ledgerTaxSum, ragicTax:"(無資料)", mediaTax:"(無資料)", voucherNo, note:"發票號碼是FV開頭(照理說該是電子發票)，但RAGIC、易發票裡都完全找不到這個號碼，可能是發票號碼登打錯誤"});
       return;
     }
 
     const matchRagic=ragicEntry&&Math.abs(ragicTax-ledgerTaxSum)<=TAX_TOLERANCE;
     const matchMedia=mediaEntry&&Math.abs(mediaTax-ledgerTaxSum)<=TAX_TOLERANCE;
-    if(matchRagic||matchMedia) return; // 只要有一邊對得起來(含容許誤差內)，就算正確，不列入異常
+    if(matchRagic||matchMedia){
+      matchedTaxSum+=ledgerTaxSum;
+      return; // 只要有一邊對得起來(含容許誤差內)，就算正確，不列入異常
+    }
 
-    // 都有資料可以比對，但都對不起來 → 分類帳打錯了
+    // FV開頭、RAGIC或易發票也找得到資料，但金額都對不起來 → 分類帳打錯了
     cat3Mismatch.push({
       no, ledgerTax:ledgerTaxSum,
       ragicTax:ragicEntry?ragicTax:"(無資料)",
@@ -8863,6 +8888,8 @@ function invcheckMaybeRun(){
   invcheckState.cat1HandIssued=cat1HandIssued;
   invcheckState.cat2NotPosted=cat2NotPosted;
   invcheckState.cat3Mismatch=cat3Mismatch;
+  invcheckState.matchedTaxSum=matchedTaxSum;
+  invcheckState.handIssuedTaxSum=handIssuedTaxSum;
   invcheckState.mediaResults=mediaResults;
   renderInvcheckResult();
 }
@@ -8895,6 +8922,27 @@ function renderInvcheckResult(){
     <tr><td>文中分類帳</td><td>2290科目貸方金額加總</td><td class="mono right">${fmtMoney(ledgerTaxSum)}</td></tr>
     <tr><td>易發票媒體申報檔</td><td>銷售金額＋營業稅額加總</td><td class="mono right">${fmtMoney(mediaSum)}</td></tr>
   `;
+
+  // 稅額平衡驗證：電子發票(FV字軌)比對正常部分 + 手開發票(非FV字軌)部分 + 金額不符部分，
+  // 加起來應該要等於分類帳總計——這是每一筆分類帳資料一定會落在其中一種分類裡，理論上一定會兜起來；
+  // 顯示出來讓會計確認整體數字沒有漏算，也方便直接引用「電子發票稅額+手開發票稅額=分類帳總計」這個角度來核對。
+  // 手開發票的部分是直接用發票號碼字軌(非FV開頭)判斷出來的，不是用「找不找得到」這種間接方式，
+  // 如果比對正常的電子發票部分本身沒有異常，代表這部分是對的，萬一加總還是兜不起來，問題一定出在手開發票這邊。
+  const{matchedTaxSum,handIssuedTaxSum}=invcheckState;
+  const cat3Sum=cat3Mismatch.reduce((s,r)=>s+r.ledgerTax,0);
+  const balanceSum=matchedTaxSum+handIssuedTaxSum+cat3Sum;
+  const balanceTb=document.getElementById("invcheck-balance-tb");
+  balanceTb.innerHTML=`
+    <tr><td>電子發票（FV字軌）比對正常的部分</td><td class="mono right">${fmtMoney(matchedTaxSum)}</td></tr>
+    <tr><td>＋ 手開發票的部分（①，依字軌判斷，只能用分類帳自己的金額）</td><td class="mono right">${fmtMoney(handIssuedTaxSum)}</td></tr>
+    <tr><td>＋ 金額不符的部分（③，用分類帳自己的金額）</td><td class="mono right">${fmtMoney(cat3Sum)}</td></tr>
+    <tr style="font-weight:700;"><td>＝ 加總</td><td class="mono right">${fmtMoney(balanceSum)}</td></tr>
+    <tr style="font-weight:700;"><td>分類帳2290科目貸方金額總計</td><td class="mono right">${fmtMoney(ledgerTaxSum)}</td></tr>
+  `;
+  const balanceOk=balanceSum===ledgerTaxSum;
+  document.getElementById("invcheck-balance-result").innerHTML=balanceOk
+    ?`<span style="color:#1E7B34;">✓ 平衡，加總跟分類帳總計完全一致</span>`
+    :`<span style="color:#C0392B;">⚠ 不平衡，加總跟分類帳總計差了 ${fmtMoney(ledgerTaxSum-balanceSum)}，可能是程式判斷邏輯漏算了某些發票，請回報</span>`;
 
   // 分類①：手開發票，需人工核對
   document.getElementById("invcheck-bal-cat1").textContent=`共 ${cat1HandIssued.length} 筆手開發票`;

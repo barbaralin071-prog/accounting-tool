@@ -1405,14 +1405,36 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       </table>
     </div>
 
-    <div style="font-size:14px;font-weight:700;margin:20px 0 10px;">⚠ 分類帳異常（優先看這裡，這是跟我們自己傳票登打直接相關的）</div>
-    <div class="bal" id="invcheck-bal-ledger">—</div>
+    <div style="font-size:14px;font-weight:700;margin:20px 0 10px;color:#C0392B;">③ 分類帳金額不符——分類帳打錯了（最重要，優先處理這裡）</div>
+    <div class="bal" id="invcheck-bal-cat3">—</div>
     <div style="overflow-x:auto;margin-top:10px;">
       <table class="tbl">
         <thead><tr>
-          <th>發票號碼</th><th>異常類型</th><th>電子發票稅額</th><th>分類帳稅額</th><th>差額</th><th>傳票號碼</th><th>說明</th>
+          <th>發票號碼</th><th>分類帳稅額</th><th>RAGIC稅額</th><th>易發票稅額</th><th>傳票號碼</th><th>說明</th>
         </tr></thead>
-        <tbody id="invcheck-tb-ledger"></tbody>
+        <tbody id="invcheck-tb-cat3"></tbody>
+      </table>
+    </div>
+
+    <div style="font-size:14px;font-weight:700;margin:20px 0 10px;">① 手開發票——RAGIC、易發票都找不到，需人工核對登打是否正確</div>
+    <div class="bal" id="invcheck-bal-cat1">—</div>
+    <div style="overflow-x:auto;margin-top:10px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>發票號碼</th><th>分類帳稅額</th><th>傳票號碼</th><th>說明</th>
+        </tr></thead>
+        <tbody id="invcheck-tb-cat1"></tbody>
+      </table>
+    </div>
+
+    <div style="font-size:14px;font-weight:700;margin:20px 0 10px;">② 電子發票尚未入帳——RAGIC或易發票有資料，分類帳還沒登打</div>
+    <div class="bal" id="invcheck-bal-cat2">—</div>
+    <div style="overflow-x:auto;margin-top:10px;">
+      <table class="tbl">
+        <thead><tr>
+          <th>發票號碼</th><th>資料來源</th><th>RAGIC稅額</th><th>易發票稅額</th><th>說明</th>
+        </tr></thead>
+        <tbody id="invcheck-tb-cat2"></tbody>
       </table>
     </div>
 
@@ -8760,57 +8782,68 @@ function invcheckMaybeRun(){
   if(!invoice||!media||!ledger) return;
   clearErr("invcheck-err");
 
-  const ledgerResults=[];
-  const mediaResults=[];
-
   // 容許誤差：不同系統（RAGIC、易發票、文中）對「未稅金額」四捨五入的方式不完全一樣，
   // 同一張發票、同一個總金額，算出來的未稅/稅額可能因為捨去或進位方向不同，剛好差1元，
   // 這種情況不是真的算錯，只是四捨五入規則不同，設定容許誤差、差在這個範圍內就不算異常。
   const TAX_TOLERANCE=parseInt(document.getElementById("invcheck-tolerance").value,10)||0;
 
-  // 以分類帳為主軸：每一張發票的稅額，只要能跟RAGIC電子發票或易發票媒體申報檔「任一邊」對得起來就算通過，
-  // 不再要求一定要在RAGIC裡找到——因為實務上有些發票是人員直接跳過RAGIC、在易發票平台上開立的，
-  // 這種情況下RAGIC找不到是正常的，不該被當成異常。
+  // 依「分類帳、RAGIC、易發票」三者是否各自有資料，分成3種主要情況：
+  // ① 分類帳有，RAGIC跟易發票都找不到 → 手開發票，人工核對登打是否正確
+  // ② 分類帳沒有，RAGIC或易發票有 → 電子發票尚未入帳
+  // ③ 三者(或至少分類帳+其中一邊)都有資料，但金額對不起來 → 分類帳打錯了
+  const cat1HandIssued=[];
+  const cat2NotPosted=[];
+  const cat3Mismatch=[];
+
   ledger.forEach((entries,no)=>{
     const ledgerTaxSum=entries.reduce((s,e)=>s+e.credit,0);
     const voucherNo=entries.map(e=>e.voucherNo).join("、");
-
     const ragicEntry=invoice.get(no);
     const mediaEntry=media.get(no);
     const ragicTax=ragicEntry?Math.round(ragicEntry.tax):null;
     const mediaTax=mediaEntry?Math.round(mediaEntry.tax):null;
 
     if(!ragicEntry&&!mediaEntry){
-      ledgerResults.push({no, type:"RAGIC和易發票都找不到", invTax:"(無)", ledgerTax:ledgerTaxSum, diff:"—", voucherNo, note:"這張發票的號碼，在RAGIC電子發票、易發票媒體申報檔裡都完全找不到，請確認發票號碼是否有登打錯誤"});
+      cat1HandIssued.push({no, ledgerTax:ledgerTaxSum, voucherNo, note:"RAGIC、易發票都找不到這張發票，屬於手開發票，請人工核對分類帳登打的稅額是否正確"});
       return;
     }
 
     const matchRagic=ragicEntry&&Math.abs(ragicTax-ledgerTaxSum)<=TAX_TOLERANCE;
     const matchMedia=mediaEntry&&Math.abs(mediaTax-ledgerTaxSum)<=TAX_TOLERANCE;
-    if(matchRagic||matchMedia) return; // 只要有一邊對得起來(含容許誤差內)，就算通過，不列入異常
+    if(matchRagic||matchMedia) return; // 只要有一邊對得起來(含容許誤差內)，就算正確，不列入異常
 
-    // 兩邊都有資料、但都對不起來，才真正列為異常
-    const parts=[];
-    if(ragicEntry) parts.push(`RAGIC稅額${ragicTax}${ragicEntry.taxIsEstimated?"(估計值)":""}`);
-    if(mediaEntry) parts.push(`易發票稅額${mediaTax}${mediaEntry.taxIsEstimated?"(用總金額反推的估計值)":""}`);
-    const hasEstimateOnly=(ragicEntry&&ragicEntry.taxIsEstimated&&!mediaEntry)||(mediaEntry&&mediaEntry.taxIsEstimated&&!ragicEntry)||((ragicEntry&&ragicEntry.taxIsEstimated)&&(mediaEntry&&mediaEntry.taxIsEstimated));
-    const estimateNote=hasEstimateOnly?"（⚠比對用的是估計值，不是驗證過的真實稅額，請務必人工核對實際發票金額再確認是否真的有問題）":"";
-    ledgerResults.push({
-      no, type:"分類帳稅額不同",
-      invTax:parts.join("／"),
-      ledgerTax:ledgerTaxSum,
-      diff:(ragicTax!=null?ledgerTaxSum-ragicTax:ledgerTaxSum-mediaTax),
+    // 都有資料可以比對，但都對不起來 → 分類帳打錯了
+    cat3Mismatch.push({
+      no, ledgerTax:ledgerTaxSum,
+      ragicTax:ragicEntry?ragicTax:"(無資料)",
+      mediaTax:mediaEntry?mediaTax+(mediaEntry.taxIsEstimated?"(估計值)":""):"(無資料)",
       voucherNo,
-      note:"分類帳2290科目貸方金額，跟RAGIC電子發票、易發票媒體申報檔都對不起來"+estimateNote,
+      note:"分類帳2290科目貸方金額，跟RAGIC、易發票的稅額都對不起來，分類帳的登打金額可能有誤",
     });
   });
 
-  // 電子發票裡有、但分類帳完全找不到的(可能還沒登打傳票)
+  // 分類帳完全找不到，但RAGIC或易發票有資料的 → 電子發票尚未入帳
+  const notPostedKeys=new Set();
+  invoice.forEach((inv,no)=>{ if(!ledger.has(no)) notPostedKeys.add(no); });
+  media.forEach((m,key)=>{ if(!ledger.has(key)) notPostedKeys.add(key); });
+  notPostedKeys.forEach(no=>{
+    const ragicEntry=invoice.get(no);
+    const mediaEntry=media.get(no);
+    const sources=[];
+    if(ragicEntry) sources.push("RAGIC");
+    if(mediaEntry) sources.push("易發票");
+    cat2NotPosted.push({
+      no,
+      ragicTax:ragicEntry?Math.round(ragicEntry.tax):"(無資料)",
+      mediaTax:mediaEntry?Math.round(mediaEntry.tax)+(mediaEntry.taxIsEstimated?"(估計值)":""):"(無資料)",
+      source:sources.join("+"),
+      note:`這張發票在${sources.join("、")}裡都有資料，但文中分類帳的2290科目裡完全找不到，電子發票尚未登打入分類帳`,
+    });
+  });
+
+  // 次要檢查：RAGIC總金額 vs 易發票媒體申報檔總金額(供參考，跟前面3個主分類是不同的比對維度)
+  const mediaResults=[];
   invoice.forEach((inv,no)=>{
-    if(!ledger.has(no)){
-      ledgerResults.push({no, type:"分類帳找不到", invTax:Math.round(inv.tax), ledgerTax:"(無)", diff:"—", voucherNo:"", note:"這張發票在文中分類帳的2290科目裡完全找不到對應的記錄，可能還沒登打傳票"});
-    }
-    // vs 媒體申報檔(總金額)——次要
     const mediaEntry=media.get(no);
     if(!mediaEntry){
       mediaResults.push({no, type:"媒體申報檔找不到", invTotal:Math.round(inv.total), mediaTotal:"(無)", diff:"—", note:"這張發票在易發票的媒體申報檔裡完全找不到，可能還沒申報或字軌號碼有誤"});
@@ -8827,24 +8860,26 @@ function invcheckMaybeRun(){
     }
   });
 
-  invcheckState.ledgerResults=ledgerResults;
+  invcheckState.cat1HandIssued=cat1HandIssued;
+  invcheckState.cat2NotPosted=cat2NotPosted;
+  invcheckState.cat3Mismatch=cat3Mismatch;
   invcheckState.mediaResults=mediaResults;
   renderInvcheckResult();
 }
 
 function renderInvcheckResult(){
-  const{invoice,media,ledger,ledgerResults,mediaResults}=invcheckState;
-  const hasResults=(ledgerResults&&ledgerResults.length)||(mediaResults&&mediaResults.length);
+  const{invoice,media,ledger,cat1HandIssued,cat2NotPosted,cat3Mismatch,mediaResults}=invcheckState;
+  const hasResults=cat1HandIssued.length||cat2NotPosted.length||cat3Mismatch.length||mediaResults.length;
   document.getElementById("invcheck-result-card").style.display="block"; // 就算0異常，也要顯示總計金額區塊
   document.getElementById("invcheck-btn-download").disabled=!hasResults;
   document.getElementById("invcheck-status").textContent=
-    `電子發票共${invoice.size}張，分類帳異常${ledgerResults.length}筆、媒體申報檔異常${mediaResults.length}筆`;
+    `分類帳共${ledger.size}張發票：手開發票${cat1HandIssued.length}筆、尚未入帳${cat2NotPosted.length}筆、金額不符${cat3Mismatch.length}筆`;
 
   // 摘要統計方塊
   document.getElementById("invcheck-sum-total").textContent=invoice.size;
-  document.getElementById("invcheck-sum-ledger-err").textContent=ledgerResults.length;
+  document.getElementById("invcheck-sum-ledger-err").textContent=cat1HandIssued.length+cat2NotPosted.length+cat3Mismatch.length;
   document.getElementById("invcheck-sum-media-err").textContent=mediaResults.length;
-  document.getElementById("invcheck-sum-ok").textContent=Math.max(0,ledger.size-ledgerResults.length);
+  document.getElementById("invcheck-sum-ok").textContent=Math.max(0,ledger.size-cat1HandIssued.length-cat3Mismatch.length);
 
   // 三份檔案總計金額
   let invUntaxedSum=0, invTaxSum=0, invTotalSum=0;
@@ -8861,23 +8896,55 @@ function renderInvcheckResult(){
     <tr><td>易發票媒體申報檔</td><td>銷售金額＋營業稅額加總</td><td class="mono right">${fmtMoney(mediaSum)}</td></tr>
   `;
 
-  document.getElementById("invcheck-bal-ledger").textContent=`共 ${ledgerResults.length} 筆分類帳異常`;
-  const tbLedger=document.getElementById("invcheck-tb-ledger");
-  tbLedger.innerHTML="";
-  ledgerResults.forEach(r=>{
+  // 分類①：手開發票，需人工核對
+  document.getElementById("invcheck-bal-cat1").textContent=`共 ${cat1HandIssued.length} 筆手開發票`;
+  const tbCat1=document.getElementById("invcheck-tb-cat1");
+  tbCat1.innerHTML="";
+  cat1HandIssued.forEach(r=>{
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${r.no}</td>
-      <td>${r.type}</td>
-      <td class="mono right">${r.invTax}</td>
       <td class="mono right">${r.ledgerTax}</td>
-      <td class="mono right">${r.diff}</td>
       <td>${r.voucherNo}</td>
       <td style="font-size:12px;color:var(--ink-soft);">${r.note}</td>
     `;
-    tbLedger.appendChild(tr);
+    tbCat1.appendChild(tr);
   });
 
+  // 分類②：電子發票尚未入帳
+  document.getElementById("invcheck-bal-cat2").textContent=`共 ${cat2NotPosted.length} 筆尚未入帳`;
+  const tbCat2=document.getElementById("invcheck-tb-cat2");
+  tbCat2.innerHTML="";
+  cat2NotPosted.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${r.no}</td>
+      <td>${r.source}</td>
+      <td class="mono right">${r.ragicTax}</td>
+      <td class="mono right">${r.mediaTax}</td>
+      <td style="font-size:12px;color:var(--ink-soft);">${r.note}</td>
+    `;
+    tbCat2.appendChild(tr);
+  });
+
+  // 分類③：分類帳金額不符(打錯了)——最重要，優先看這裡
+  document.getElementById("invcheck-bal-cat3").textContent=`共 ${cat3Mismatch.length} 筆金額不符`;
+  const tbCat3=document.getElementById("invcheck-tb-cat3");
+  tbCat3.innerHTML="";
+  cat3Mismatch.forEach(r=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${r.no}</td>
+      <td class="mono right">${r.ledgerTax}</td>
+      <td class="mono right">${r.ragicTax}</td>
+      <td class="mono right">${r.mediaTax}</td>
+      <td>${r.voucherNo}</td>
+      <td style="font-size:12px;color:var(--ink-soft);">${r.note}</td>
+    `;
+    tbCat3.appendChild(tr);
+  });
+
+  // 次要：媒體申報檔金額檢查
   document.getElementById("invcheck-bal-media").textContent=`共 ${mediaResults.length} 筆媒體申報檔異常`;
   const tbMedia=document.getElementById("invcheck-tb-media");
   tbMedia.innerHTML="";
@@ -8916,7 +8983,7 @@ document.getElementById("invcheck-btn-rerun").addEventListener("click",()=>{
 });
 
 document.getElementById("invcheck-btn-download").addEventListener("click",()=>{
-  const{invoice,media,ledger,ledgerResults,mediaResults}=invcheckState;
+  const{invoice,media,ledger,cat1HandIssued,cat2NotPosted,cat3Mismatch,mediaResults}=invcheckState;
   const wb=XLSX.utils.book_new();
 
   let invUntaxedSum=0, invTaxSum=0, invTotalSum=0;
@@ -8932,22 +8999,40 @@ document.getElementById("invcheck-btn-download").addEventListener("click",()=>{
     ["電子發票","總金額加總",Math.round(invTotalSum)],
     ["文中分類帳","2290科目貸方金額加總",ledgerTaxSum],
     ["易發票媒體申報檔","銷售金額+營業稅額加總",mediaSum],
+    [],
+    ["統計","比對總筆數(分類帳)",ledger.size],
+    ["統計","③分類帳金額不符",cat3Mismatch.length],
+    ["統計","①手開發票",cat1HandIssued.length],
+    ["統計","②電子發票尚未入帳",cat2NotPosted.length],
+    ["統計","比對正常筆數",Math.max(0,ledger.size-cat1HandIssued.length-cat3Mismatch.length)],
   ];
   const wsTotals=XLSX.utils.aoa_to_sheet(totalsRows);
-  wsTotals["!cols"]=[{wch:36},{wch:20},{wch:16}];
+  wsTotals["!cols"]=[{wch:20},{wch:24},{wch:16}];
   XLSX.utils.book_append_sheet(wb,wsTotals,"三份檔案總計");
 
-  const ledgerRows=[["發票號碼","異常類型","電子發票稅額","分類帳稅額","差額","傳票號碼","說明"]];
-  ledgerResults.forEach(r=>ledgerRows.push([r.no,r.type,r.invTax,r.ledgerTax,r.diff,r.voucherNo,r.note]));
-  const wsLedger=XLSX.utils.aoa_to_sheet(ledgerRows);
-  wsLedger["!cols"]=[{wch:14},{wch:22},{wch:12},{wch:12},{wch:10},{wch:20},{wch:50}];
-  XLSX.utils.book_append_sheet(wb,wsLedger,"分類帳異常");
+  const cat3Rows=[["發票號碼","分類帳稅額","RAGIC稅額","易發票稅額","傳票號碼","說明"]];
+  cat3Mismatch.forEach(r=>cat3Rows.push([r.no,r.ledgerTax,r.ragicTax,r.mediaTax,r.voucherNo,r.note]));
+  const wsCat3=XLSX.utils.aoa_to_sheet(cat3Rows);
+  wsCat3["!cols"]=[{wch:14},{wch:12},{wch:14},{wch:16},{wch:16},{wch:50}];
+  XLSX.utils.book_append_sheet(wb,wsCat3,"③分類帳金額不符");
+
+  const cat1Rows=[["發票號碼","分類帳稅額","傳票號碼","說明"]];
+  cat1HandIssued.forEach(r=>cat1Rows.push([r.no,r.ledgerTax,r.voucherNo,r.note]));
+  const wsCat1=XLSX.utils.aoa_to_sheet(cat1Rows);
+  wsCat1["!cols"]=[{wch:14},{wch:12},{wch:16},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,wsCat1,"①手開發票");
+
+  const cat2Rows=[["發票號碼","資料來源","RAGIC稅額","易發票稅額","說明"]];
+  cat2NotPosted.forEach(r=>cat2Rows.push([r.no,r.source,r.ragicTax,r.mediaTax,r.note]));
+  const wsCat2=XLSX.utils.aoa_to_sheet(cat2Rows);
+  wsCat2["!cols"]=[{wch:14},{wch:12},{wch:14},{wch:16},{wch:60}];
+  XLSX.utils.book_append_sheet(wb,wsCat2,"②電子發票尚未入帳");
 
   const mediaRows=[["發票號碼","異常類型","電子發票總金額","媒體申報檔金額","差額","說明"]];
   mediaResults.forEach(r=>mediaRows.push([r.no,r.type,r.invTotal,r.mediaTotal,r.diff,r.note]));
   const wsMedia=XLSX.utils.aoa_to_sheet(mediaRows);
   wsMedia["!cols"]=[{wch:14},{wch:26},{wch:14},{wch:14},{wch:10},{wch:50}];
-  XLSX.utils.book_append_sheet(wb,wsMedia,"媒體申報檔異常");
+  XLSX.utils.book_append_sheet(wb,wsMedia,"媒體申報檔異常(次要)");
 
   XLSX.writeFile(wb,"發票勾稽異常清單_"+new Date().toISOString().slice(0,10)+".xlsx");
 });

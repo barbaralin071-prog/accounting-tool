@@ -8719,7 +8719,7 @@ document.getElementById("lottery-btn-reset").addEventListener("click",()=>{
       易發票這份匯出檔的稅額拆分不一定固定，有時候把含稅金額整個放進銷售金額、稅額留0，
       有時候正常拆成未稅+稅額，所以一定要用「兩欄加總」去比，不能只比銷售金額單一欄位。
 ══════════════════════════════════════════ */
-let invcheckState={invoice:null, media:null, ledger:null};
+let invcheckState={invoice:new Map(), media:new Map(), ledger:null};
 
 function parseInvcheckInvoice(data){
   const wb=XLSX.read(data,{type:"array"});
@@ -8872,7 +8872,9 @@ document.getElementById("invcheck-btn-save-ranges").addEventListener("click",()=
 
 function invcheckMaybeRun(){
   const{invoice,media,ledger}=invcheckState;
-  if(!invoice||!media||!ledger) return;
+  // 分類帳一定要有；RAGIC電子發票、易發票媒體申報檔這兩個，只要有其中一個上傳就可以開始比對，
+  // 不用兩個都齊全——沒上傳的那個檔案，內部用空Map處理，等同於「這個來源完全沒有資料可以比對」。
+  if(!ledger||(invoice.size===0&&media.size===0)) return;
   clearErr("invcheck-err");
 
   // 容許誤差：不同系統（RAGIC、易發票、文中）對「未稅金額」四捨五入的方式不完全一樣，
@@ -8910,7 +8912,12 @@ function invcheckMaybeRun(){
     const mediaTax=mediaEntry?Math.round(mediaEntry.tax):null;
 
     if(!ragicEntry&&!mediaEntry){
-      cat3Mismatch.push({no, ledgerTax:ledgerTaxSum, ragicTax:"(無資料)", mediaTax:"(無資料)", voucherNo, note:"發票號碼落在電子發票的實際發放區間內(照理說該是電子發票)，但RAGIC、易發票裡都完全找不到這個號碼，可能是發票號碼登打錯誤"});
+      const checkedSources=[];
+      if(invoice.size>0) checkedSources.push("RAGIC");
+      if(media.size>0) checkedSources.push("易發票");
+      const sourceText=checkedSources.length?checkedSources.join("、"):"目前上傳的來源";
+      const doWord=checkedSources.length>1?"都":"";
+      cat3Mismatch.push({no, ledgerTax:ledgerTaxSum, ragicTax:"(無資料)", mediaTax:"(無資料)", voucherNo, note:`發票號碼落在電子發票的實際發放區間內(照理說該是電子發票)，但${sourceText}裡${doWord}完全找不到這個號碼，可能是發票號碼登打錯誤`});
       return;
     }
 
@@ -8922,12 +8929,15 @@ function invcheckMaybeRun(){
     }
 
     // FV開頭、RAGIC或易發票也找得到資料，但金額都對不起來 → 分類帳打錯了
+    const availableSources=[];
+    if(ragicEntry) availableSources.push("RAGIC");
+    if(mediaEntry) availableSources.push("易發票");
     cat3Mismatch.push({
       no, ledgerTax:ledgerTaxSum,
       ragicTax:ragicEntry?ragicTax:"(無資料)",
       mediaTax:mediaEntry?mediaTax+(mediaEntry.taxIsEstimated?"(估計值)":""):"(無資料)",
       voucherNo,
-      note:"分類帳2290科目貸方金額，跟RAGIC、易發票的稅額都對不起來，分類帳的登打金額可能有誤",
+      note:`分類帳2290科目貸方金額，跟${availableSources.join("、")}的稅額對不起來，分類帳的登打金額可能有誤`,
     });
   });
 
@@ -8946,7 +8956,7 @@ function invcheckMaybeRun(){
       ragicTax:ragicEntry?Math.round(ragicEntry.tax):"(無資料)",
       mediaTax:mediaEntry?Math.round(mediaEntry.tax)+(mediaEntry.taxIsEstimated?"(估計值)":""):"(無資料)",
       source:sources.join("+"),
-      note:`這張發票在${sources.join("、")}裡都有資料，但文中分類帳的2290科目裡完全找不到，電子發票尚未登打入分類帳`,
+      note:`這張發票在${sources.join("、")}裡${sources.length>1?"都":""}有資料，但文中分類帳的2290科目裡完全找不到，電子發票尚未登打入分類帳`,
     });
   });
 

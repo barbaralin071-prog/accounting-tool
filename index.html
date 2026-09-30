@@ -9002,8 +9002,9 @@ function renderInvcheckResult(){
 
   const totalsTb=document.getElementById("invcheck-totals-tb");
   totalsTb.innerHTML=`
-    <tr><td>電子發票</td><td>未稅＋稅額＋總金額</td><td class="mono right">${fmtMoney(Math.round(invUntaxedSum))} ／ ${fmtMoney(Math.round(invTaxSum))} ／ ${fmtMoney(Math.round(invTotalSum))}</td></tr>
+    <tr><td>電子發票</td><td>未稅＋稅額＋總金額</td><td class="mono right">${fmtMoney(Math.round(invUntaxedSum))} ／ <span style="color:#C0392B;font-weight:700;">${fmtMoney(Math.round(invTaxSum))}</span> ／ ${fmtMoney(Math.round(invTotalSum))}</td></tr>
     <tr><td>文中分類帳</td><td>2290科目貸方金額加總</td><td class="mono right">${fmtMoney(ledgerTaxSum)}</td></tr>
+    <tr><td>文中分類帳</td><td>其中，屬電子發票的貸方金額</td><td class="mono right"><span style="color:#C0392B;font-weight:700;">${fmtMoney(invcheckState.matchedTaxSum||0)}</span></td></tr>
     <tr><td>易發票媒體申報檔</td><td>銷售金額＋營業稅額加總</td><td class="mono right">${fmtMoney(mediaSum)}</td></tr>
   `;
 
@@ -9017,9 +9018,9 @@ function renderInvcheckResult(){
   const balanceSum=matchedTaxSum+handIssuedTaxSum+cat3Sum;
   const balanceTb=document.getElementById("invcheck-balance-tb");
   balanceTb.innerHTML=`
-    <tr><td>電子發票（FV字軌）比對正常的部分</td><td class="mono right">${fmtMoney(matchedTaxSum)}</td></tr>
-    <tr><td>＋ 手開發票的部分（①，依字軌判斷，只能用分類帳自己的金額）</td><td class="mono right">${fmtMoney(handIssuedTaxSum)}</td></tr>
-    <tr><td>＋ 金額不符的部分（③，用分類帳自己的金額）</td><td class="mono right">${fmtMoney(cat3Sum)}</td></tr>
+    <tr><td>分類帳 屬電子發票的貸方金額</td><td class="mono right">${fmtMoney(matchedTaxSum)}</td></tr>
+    <tr><td>＋ 分類帳 屬手開發票的貸方金額（①）</td><td class="mono right">${fmtMoney(handIssuedTaxSum)}</td></tr>
+    <tr><td>＋ 金額不符的部分（③）</td><td class="mono right">${fmtMoney(cat3Sum)}</td></tr>
     <tr style="font-weight:700;"><td>＝ 加總</td><td class="mono right">${fmtMoney(balanceSum)}</td></tr>
     <tr style="font-weight:700;"><td>分類帳2290科目貸方金額總計</td><td class="mono right">${fmtMoney(ledgerTaxSum)}</td></tr>
   `;

@@ -1171,6 +1171,14 @@ button.btn.ghost:hover{background:var(--accent-soft);}
           </div>
           <input type="file" id="fang-refund-file-invoice" accept=".xlsx" hidden>
         </div>
+        <div>
+          <div class="dropzone" id="fang-refund-dz-lizhang" style="max-width:320px;">
+            <div class="dz-icon">📒</div>
+            <div class="dz-label">上傳立帳明細表 2205-031（選填，用來帶出押金與長摘要）</div>
+            <div class="dz-hint">立帳明細表_2205-031.xlsx</div>
+          </div>
+          <input type="file" id="fang-refund-file-lizhang" accept=".xlsx" hidden>
+        </div>
       </div>
       <div class="errbox" id="fang-refund-err"></div>
       <div id="fang-refund-result" style="display:none;margin-top:14px;">
@@ -3523,12 +3531,24 @@ const REFUND_FEE_KEYWORDS=["代收電費","電費","匯費","少匯","匯差","�
 // （6270要不要開、金額多少，改用金流表本身的「匯費」欄位決定，不靠備註文字反推；
 // 這裡的fee只保留給房管年租那邊用，維持原本已驗證過的用法）。
 // 「+」加項直接併入電費淨額一起加減（加項會讓淨電費變小），不再另開一行、也不再視為需要人工處理的情況。
-function parseRefundNote(note){
+function parseRefundNote(note, totalForInfer){
   if(!note) return{ok:false, reason:"備註是空的"};
   const dm=note.match(/(?:押金|定金)(\d+(?:\.\d+)?)/);
-  if(!dm) return{ok:false, reason:"找不到「押金/定金」金額"};
-  const deposit=parseFloat(dm[1]);
-  const afterDeposit=note.slice(dm.index+dm[0].length);
+  let deposit=null, afterDeposit="", depositInferred=false;
+  if(dm){
+    deposit=parseFloat(dm[1]);
+    afterDeposit=note.slice(dm.index+dm[0].length);
+  }else if(totalForInfer>0){
+    // 有些退款單備註沒有寫「押金XXXX」，只寫「房源 房客 -電費xxx -匯費15」。
+    // 這種情況押金金額反推：押金 ＝ 退款單總金額(已扣匯費的出款金額) ＋ 各項扣款 ＋ 匯費，
+    // 費用段落從第一個「空白+減號/加號」開始算（房源名稱本身常含減號，例如「晉江19-3C」，不能從那裡開始）。
+    const startM=note.match(/\s[+\-]/);
+    if(!startM) return{ok:false, reason:"找不到「押金/定金」金額，備註也沒有可以反推的扣款明細"};
+    afterDeposit=note.slice(startM.index);
+    depositInferred=true;
+  }else{
+    return{ok:false, reason:"找不到「押金/定金」金額"};
+  }
 
   // 金額一定要緊跟在明確的費用類型關鍵字後面才算數，不能只看「非數字」就當作文字部分——
   // 因為房源/房號本身常常含數字（例如「汀州188」「信義186」「3A」），如果只排除數字字元，
@@ -3552,7 +3572,11 @@ function parseRefundNote(note){
     feeSegments.push({houseText, label, amount:amt, sign});
   }
 
-  return{ok:true, deposit, electricFee:-signedSum, fee, feeSegments};
+  if(depositInferred){
+    if(!feeSegments.length) return{ok:false, reason:"找不到「押金/定金」金額，備註也沒有可以反推的電費等扣款明細"};
+    deposit=Math.round(totalForInfer+(-signedSum)+fee);
+  }
+  return{ok:true, deposit, electricFee:-signedSum, fee, feeSegments, depositInferred};
 }
 
 // 從備註抓「房源」部分（給 matchHousingFromDesc 用，也給摘要用），
@@ -3568,7 +3592,8 @@ function extractRefundHouseText(note){
 function extractTenantCandidates(row, houseMatch){
   const candidates=[];
   if(row.tenant) candidates.push(row.tenant);
-  const beforeKeyword=row.note.split(/押金|定金/)[0];
+  const hasDepositKeyword=/押金|定金/.test(row.note);
+  const beforeKeyword=hasDepositKeyword?row.note.split(/押金|定金/)[0]:row.note.split(/\s+[+\-]/)[0];
   let rest=beforeKeyword;
   if(houseMatch){
     const names=[houseMatch.matchedName, ...(houseMatch.aliases||[])].filter(Boolean);
@@ -3597,7 +3622,136 @@ function namesMatch(a,b){
   return smaller.every(tok=>larger.includes(tok));
 }
 
-function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef){
+// ══════ 立帳明細表(2205-031)：用來帶出退押金時要沖的押金立帳列 ══════
+// 讀「立帳明細表」匯出檔，只留2205-031、還有未沖餘額的列。
+// 每一列保留：立帳單號(之後做沖帳檔要用)、客供商代號、長摘要(原樣照抄進傳票)、房客姓名(從摘要抓)、未沖餘額。
+function parseLizhangDetailXlsx(data){
+  const wb=XLSX.read(data,{type:"array"});
+  const ws=wb.Sheets[wb.SheetNames[0]];
+  const aoa=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+  const hi=aoa.findIndex(r=>r&&r.some(c=>c==="立帳單號"));
+  if(hi===-1) throw new Error("找不到「立帳單號」欄位，請確認是立帳明細表");
+  const headers=aoa[hi];
+  const col=n=>headers.indexOf(n);
+  const cAcct=col("會計項目(立帳檔)"), cNo=col("立帳單號"), cCust=col("客戶供應商代號"),
+        cAmt=col("立帳金額"), cBal=col("未沖餘額(實際)")>=0?col("未沖餘額(實際)"):col("餘額"),
+        cClose=col("結清否"), cSumM=col("摘要(M)"), cSum=col("摘要"), cNote=col("備註"), cDate=col("立帳日期(格式化)");
+  if(cNo<0||cCust<0) throw new Error("立帳明細表缺少「立帳單號」或「客戶供應商代號」欄位");
+  const out=[];
+  aoa.slice(hi+1).forEach(r=>{
+    if(!r[cNo]) return;
+    if(cAcct>=0 && String(r[cAcct]||"").trim()!=="2205-031") return;
+    if(cClose>=0 && String(r[cClose]||"").trim()==="Y") return;
+    const bal=Number(cBal>=0?r[cBal]:r[cAmt])||0;
+    if(bal<=0) return;
+    const summary=String((cSumM>=0&&r[cSumM])||(cSum>=0&&r[cSum])||(cNote>=0&&r[cNote])||"").trim();
+    // 房客姓名：摘要裡「押金/租金/定金」後面那段（日期寫法不固定，不能靠固定欄位數去切）
+    const tm=summary.match(/(?:押金|租金|定金)-?(.*)$/);
+    const tenant=tm?tm[1].trim():"";
+    out.push({lizhangNo:String(r[cNo]).trim(), custCode:String(r[cCust]||"").trim(), summary, tenant,
+      amount:bal, date:cDate>=0?String(r[cDate]||""):"", lease:parseLeaseEnd(summary)});
+  });
+  return out;
+}
+
+// 從立帳摘要抓租期，例如「汀州188-2A6-115/08/25-08/27-押金-邵彥芬」→ 租期 115/08/25～115/08/27。
+// 摘要寫法不固定：結束日可能省略年份(同一年；月份比起始月小就是跨年)、日期可能只有1位數、
+// 「押金」前面可能沒有減號，所以只靠「起始日-結束日」這個樣式去抓，抓不到就回傳null(不做檢查)。
+function parseLeaseEnd(summary){
+  const m=String(summary||"").match(/(\d{2,3})\/(\d{1,2})\/(\d{1,2})\s*-\s*(?:(\d{2,3})\/)?(\d{1,2})\/(\d{1,2})/);
+  if(!m) return null;
+  const sy=+m[1], sm=+m[2], sd=+m[3], em=+m[5], ed=+m[6];
+  let ey=m[4]?+m[4]:sy;
+  if(!m[4] && (em<sm || (em===sm&&ed<sd))) ey=sy+1;
+  const pad=n=>String(n).padStart(2,"0");
+  return{end:ey*10000+em*100+ed, endStr:`${ey}/${pad(em)}/${pad(ed)}`};
+}
+function rocDateToNum(str){
+  const p=String(str||"").split("/").map(Number);
+  if(p.length!==3||p.some(isNaN)) return null;
+  return p[0]*10000+p[1]*100+p[2];
+}
+
+// 房客姓名比對：去掉括號備註跟空白後，只要一邊包含另一邊就算相符(至少2個字，避免誤中)
+function lizhangTenantMatch(cands, tenantStr){
+  const norm=x=>String(x||"").replace(/[（(].*?[）)]/g,"").replace(/\s+/g,"").toLowerCase();
+  const t=norm(tenantStr);
+  if(t.length<2) return false;
+  return (cands||[]).some(c=>{
+    if(namesMatch(c,tenantStr)) return true;
+    const n=norm(c);
+    return n.length>=2 && (n.includes(t)||t.includes(n));
+  });
+}
+
+// 找出這筆退押要沖的2205-031立帳列：
+//  候選＝客供商代號相同、房客姓名相符、尚未被其他退款用掉的未沖列；
+//  再從候選裡湊出「加總剛好等於押金金額」的組合(同一房客可能分次收押金、或同代號下有好幾間房)。
+//  湊法有多種時，優先選「摘要裡含備註提到的房號」的組合；還是分不出來就取第一組並標記需查核。
+function pickDepositLizhang(rows, usedSet, custCode, tenantCands, target, noteText, voucherDateNum){
+  const cands=[];
+  rows.forEach((r,i)=>{
+    if(usedSet.has(i)) return;
+    if(r.custCode!==custCode) return;
+    if(!lizhangTenantMatch(tenantCands, r.tenant)) return;
+    cands.push({r,i});
+  });
+  if(!cands.length) return{status:"no-candidate", cands};
+  const n=Math.min(cands.length,14);
+  const hits=[];
+  for(let mask=1;mask<(1<<n);mask++){
+    let sum=0; const pick=[];
+    for(let b=0;b<n;b++) if(mask&(1<<b)){ sum+=cands[b].r.amount; pick.push(cands[b]); }
+    if(Math.abs(sum-target)<0.5) hits.push(pick);
+  }
+  if(!hits.length) return{status:"no-sum", cands};
+  if(hits.length===1) return{status:"ok", picked:hits[0], cands};
+  // 多種湊法：優先挑摘要裡含備註提到的房號/房源的那一組
+  const score=pick=>pick.filter(c=>{
+    const roomM=c.r.summary.match(/^(.*?)-\d{2,3}\//); // 摘要日期前面那段＝房源-房號
+    const head=roomM?roomM[1]:c.r.summary.split("-").slice(0,2).join("-");
+    return head&&noteText.includes(head);
+  }).length;
+  // 其次：租期在傳票日期之前就結束的才合理(退押金一定在租期結束後)，租期還沒結束的組合排後面
+  const lateCount=pick=>voucherDateNum==null?0:pick.filter(c=>c.r.lease&&c.r.lease.end>voucherDateNum).length;
+  hits.sort((a,b)=>(score(b)-score(a))||(lateCount(a)-lateCount(b)));
+  const same=(a,b)=>score(a)===score(b)&&lateCount(a)===lateCount(b);
+  const unique=!same(hits[0],hits[1]);
+  return{status:unique?"ok":"ambiguous", picked:hits[0], cands};
+}
+
+// 金流表有出帳就一定要有傳票：核心邏輯解析不出來(ok:false)或程式出錯時，不能把這筆丟掉，
+// 改用保底傳票——依出款金額產生「2205-031押金借方／1110-01銀行存款貸方」兩行，全部標「⚠需查核」，
+// 讓會計匯入後再人工補上電費、代收電費、押金立帳對象等正確分錄。
+function buildRefundFallbackVoucher(row, cashflowRowsRef, reason){
+  const cf=(row.cfIndex!=null && cashflowRowsRef && cashflowRowsRef[row.cfIndex])?cashflowRowsRef[row.cfIndex]:null;
+  const bankAmount=cf?cf.expense:row.total;
+  const bankDesc=cf?cf.desc:(row.note||"");
+  const hm=matchHousingFromDesc(extractRefundHouseText(row.note||""))||matchHousingFromDesc(row.note||"")||(cf?matchHousingFromDesc(cf.desc):null);
+  const code=hm?hm.code:"";
+  const TAG="⚠需查核-";
+  return{
+    ok:true, fallback:true, needsReview:true,
+    reviewReason:`${reason}。但這筆已經出帳，仍先依出款金額 ${fmtMoney(bankAmount)} 產生「2205-031押金借方／1110-01銀行存款貸方」兩行保底傳票，請人工補上電費、代收電費、押金立帳對象等正確分錄`,
+    lines:[
+      {acctCode:"2205-031", custCode:code, dc:1, amount:bankAmount, summary:TAG+bankDesc, liChongOverride:"Y"},
+      {acctCode:"1110-01", custCode:code, dc:2, amount:bankAmount, summary:bankDesc, liChongOverride:"N"},
+    ],
+  };
+}
+
+function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef, lizhangPool){
+  let res;
+  try{
+    res=buildRefundVoucherLinesCore(row, invoices, usedInvoiceIdx, cashflowRowsRef, lizhangPool);
+  }catch(e){
+    res={ok:false, reason:"程式處理這筆時發生錯誤："+e.message};
+  }
+  if(res&&res.ok) return res;
+  return buildRefundFallbackVoucher(row, cashflowRowsRef, (res&&res.reason)||"無法判斷這筆的分錄");
+}
+
+function buildRefundVoucherLinesCore(row, invoices, usedInvoiceIdx, cashflowRowsRef, lizhangPool){
   const{note, total, dept, tenant, rocDateStr, rocYear}=row;
 
   // 商空案例：固定打法，不用解析備註細節。
@@ -3639,7 +3793,8 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef)
   }
 
   // 短租處：先解析備註，抓押金金額跟電費淨額（電費淨額已經把「+」加項一起加減進去了）
-  const parsed=parseRefundNote(note);
+  // 備註沒寫押金金額時，用「總金額+扣款+匯費」反推押金(第二個參數)
+  const parsed=parseRefundNote(note, total);
   if(!parsed.ok) return{ok:false, reason:parsed.reason};
 
   const houseText=extractRefundHouseText(note);
@@ -3669,9 +3824,50 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef)
   let needsReview=false;
   const reviewReasons=[];
   const REVIEW_TAG="⚠需查核-";
+  if(parsed.depositInferred){
+    needsReview=true;
+    reviewReasons.push(`退款單備註沒有寫押金金額，押金 ${fmtMoney(parsed.deposit)} 是用「退款總金額＋扣款明細＋匯費」反推出來的，請核對是否跟當初收押金的立帳金額一致`);
+  }
 
   const lines=[];
-  lines.push({acctCode:"2205-031", custCode:code, dc:1, amount:parsed.deposit, summary:`${houseLabel}-押金-${tenantLabel}`, liChongOverride:"Y"});
+  // 押金借方：有上傳立帳明細表時，改用帳上真正的未沖押金立帳列（金額、長摘要、立帳單號都照帳上的），
+  // 同一房客分次收押金就會出現好幾列；沒上傳或帳上找不到，才退回用備註/反推的押金金額組字串。
+  let depositFromLizhang=false;
+  if(lizhangPool&&lizhangPool.rows&&lizhangPool.rows.length){
+    const voucherDateStr=row.rocDateStr||TODAY_ROC;
+    const voucherDateNum=rocDateToNum(voucherDateStr);
+    const pk=pickDepositLizhang(lizhangPool.rows, lizhangPool.used, code, tenantCandidates, parsed.deposit, note, voucherDateNum);
+    if(pk.status==="ok"||pk.status==="ambiguous"){
+      // 租期檢查：退押金一定是租期結束之後才匯出，傳票日期早於立帳摘要的租期結束日，
+      // 代表沖到的押金可能不是這一筆(例如同房客不同房、不同租期)，標需查核。
+      pk.picked.forEach(c=>{
+        if(c.r.lease&&voucherDateNum!=null&&voucherDateNum<c.r.lease.end){
+          needsReview=true;
+          reviewReasons.push(`沖的押金立帳「${c.r.summary}」(立帳單號 ${c.r.lizhangNo}) 租期到 ${c.r.lease.endStr} 才結束，但這張傳票日期是 ${voucherDateStr}，退押金通常在租期結束後才匯出，請確認沖的是不是這一筆`);
+        }
+      });
+      pk.picked.forEach(c=>{
+        lizhangPool.used.add(c.i);
+        lines.push({acctCode:"2205-031", custCode:c.r.custCode, dc:1, amount:c.r.amount, summary:c.r.summary, liChongOverride:"Y", lizhangNo:c.r.lizhangNo});
+      });
+      depositFromLizhang=true;
+      if(pk.status==="ambiguous"){
+        needsReview=true;
+        reviewReasons.push(`帳上有好幾種組合都能湊出押金 ${fmtMoney(parsed.deposit)}，這裡先取其中一組（立帳單號 ${pk.picked.map(c=>c.r.lizhangNo).join("、")}），請人工確認沖的是不是這幾筆`);
+      }
+    }else if(pk.status==="no-sum"){
+      needsReview=true;
+      reviewReasons.push(`立帳明細表裡找得到「${tenantLabel}」未沖的押金（${pk.cands.map(c=>fmtMoney(c.r.amount)).join("、")}），但湊不出押金金額 ${fmtMoney(parsed.deposit)}，這裡先用備註的押金金額，請人工核對要沖哪幾筆`);
+    }else{
+      needsReview=true;
+      reviewReasons.push(`立帳明細表裡找不到「${tenantLabel}」(客供商代號 ${code}) 未沖的押金，可能已經沖過、客供商代號不同，或明細表匯出範圍沒涵蓋，請人工確認`);
+    }
+  }
+  if(!depositFromLizhang){
+    // 帳上找不到立帳列時，摘要盡量帶備註寫的房源+房號(例如「重慶北22-7A」)，不要只剩資料庫裡的房源名稱
+    const houseWithRoom=(note.trim().split(/\s+/)[0])||houseLabel;
+    lines.push({acctCode:"2205-031", custCode:code, dc:1, amount:parsed.deposit, summary:`${houseWithRoom}-押金-${tenantLabel}`, liChongOverride:"Y"});
+  }
 
   // 每一段電費/代收電費，各自獨立查詢這段文字裡提到的房源，依「那個房源自己的服務模式」決定要記到
   // 4101-04+2290(包租，要記銷項稅額)還是2205-01(合作拆帳，代收代付不用記稅)——
@@ -3698,20 +3894,6 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef)
     }
   });
 
-  // 合作拆帳的電費，每一段各自開一行2205-01(代收款-雜項)，不用拆稅額、不用找發票——
-  // 這是代屋主收取的錢，不是公司收入，理論上也不會有對應的電子發票。
-  partnerSegments.forEach(seg=>{
-    lines.push({acctCode:"2205-01", custCode:seg.code, dc:2, amount:seg.amount, summary:`${seg.houseLabel}-退押金代收電費-${tenantLabel}`, liChongOverride:"Y"});
-  });
-
-  // 服務模式查不到/不明確的段落，暫時也記到2205-01，但標記需人工確認，避免這筆金額憑空消失、
-  // 導致傳票借貸不平衡；同時不產生4101-04/2290，因為不確定是不是公司收入、不能貿然記銷項稅額。
-  unresolvedSegments.forEach(seg=>{
-    needsReview=true;
-    reviewReasons.push(`「${seg.houseText}」這段電費查不到對應房源、或服務模式不是包租也不是合作拆帳，暫時記到代收款-雜項，請人工確認正確的會計科目`);
-    lines.push({acctCode:"2205-01", custCode:seg.code, dc:2, amount:seg.amount, summary:`${REVIEW_TAG}${seg.houseLabel}-退押金代收電費-${tenantLabel}`, liChongOverride:"Y"});
-  });
-
   // 包租房源的電費，所有段落合併加總後，一起去找對應的電子發票(一張發票通常就是這幾段電費的加總)，
   // 找不到發票的話，金額暫用自算5%營業稅公式，並標記⚠需查核。
   const packageFeeTotal=packageSegments.reduce((s,seg)=>s+seg.amount,0);
@@ -3729,11 +3911,14 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef)
         if(tenantCandidates.some(cand=>namesMatch(cand,buyerName))){ invIdx=i; break; }
       }
     }
-    let untaxedAmt, taxAmt, invNo="";
+    let untaxedAmt, taxAmt, invNo="", taxLineCode=packageCode;
     let packageNeedsReview=false;
     if(invIdx>=0){
       usedInvoiceIdx.add(invIdx);
       const inv=invoices[invIdx];
+      // 發票上有買受人統一編號的話，2290銷項稅額的客供商代號直接用統編(跟文中系統的正確檔案一致)；
+      // 沒有統編(一般個人房客)才用房源代號。
+      if(inv.taxId) taxLineCode=inv.taxId;
       invNo=String(inv.invoiceNo||"").replace(/-/g,"");
       untaxedAmt=Math.round(inv.untaxed);
       taxAmt=Math.round(inv.tax);
@@ -3753,8 +3938,22 @@ function buildRefundVoucherLines(row, invoices, usedInvoiceIdx, cashflowRowsRef)
     }
     const tag=packageNeedsReview?REVIEW_TAG:"";
     lines.push({acctCode:"4101-04", custCode:packageCode, dc:2, amount:untaxedAmt, summary:`${tag}${tenantLabel}-電費`, deptNo:"001", liChongOverride:"N"});
-    lines.push({acctCode:"2290", custCode:packageCode, dc:2, amount:taxAmt, summary:`${tag}${tenantLabel}-電費${invNo?"-"+invNo:""}`, liChongOverride:"N"});
+    lines.push({acctCode:"2290", custCode:taxLineCode, dc:2, amount:taxAmt, summary:`${tag}${tenantLabel}-電費${invNo?"-"+invNo:""}`, liChongOverride:"N"});
   }
+
+  // 合作拆帳的電費，每一段各自開一行2205-01(代收款-雜項)，不用拆稅額、不用找發票——
+  // 這是代屋主收取的錢，不是公司收入，理論上也不會有對應的電子發票。
+  partnerSegments.forEach(seg=>{
+    lines.push({acctCode:"2205-01", custCode:seg.code, dc:2, amount:seg.amount, summary:`${seg.houseLabel}-退押金代收電費-${tenantLabel}`, liChongOverride:"Y"});
+  });
+
+  // 服務模式查不到/不明確的段落，暫時也記到2205-01，但標記需人工確認，避免這筆金額憑空消失、
+  // 導致傳票借貸不平衡；同時不產生4101-04/2290，因為不確定是不是公司收入、不能貿然記銷項稅額。
+  unresolvedSegments.forEach(seg=>{
+    needsReview=true;
+    reviewReasons.push(`「${seg.houseText}」這段電費查不到對應房源、或服務模式不是包租也不是合作拆帳，暫時記到代收款-雜項，請人工確認正確的會計科目`);
+    lines.push({acctCode:"2205-01", custCode:seg.code, dc:2, amount:seg.amount, summary:`${REVIEW_TAG}${seg.houseLabel}-退押金代收電費-${tenantLabel}`, liChongOverride:"Y"});
+  });
 
   lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:bankAmount, summary:bankDesc, liChongOverride:"N"});
   // 這筆對應到的金流表那一列，如果「匯費」欄位本身有填值，才另開一行6270（金額直接用金流表上的匯費欄位）；
@@ -3814,7 +4013,7 @@ function parseRefundVoucherXlsx(data){
     .filter(r=>r.note && r.total>0);
 }
 
-let fangRefundState={rows:[], results:[], cashflowRows:null, invoices:null};
+let fangRefundState={rows:[], results:[], cashflowRows:null, invoices:null, lizhangRows:null};
 
 // 把退款單的每一筆，用「日期＋金額」對回支出金流表裡的位置，取得金流表上的原始順序。
 // 對不到的（金流表沒上傳、或真的找不到對應的那一筆）一律排在最後面，並標記提醒。
@@ -3904,7 +4103,18 @@ function fangRefundRebuild(){
   fangRefundState.rows=ordered;
   fangRefundState.unmatchedCfRows=unmatchedCfRows;
   const usedInvoiceIdx=new Set(); // 每次重新計算都要歸零，避免累積上次殘留的使用紀錄
-  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row, fangRefundState.invoices, usedInvoiceIdx, fangRefundState.cashflowRows)}));
+  const lizhangPool=fangRefundState.lizhangRows?{rows:fangRefundState.lizhangRows, used:new Set()}:null; // 同上，每次重算用掉的立帳列也要歸零
+  fangRefundState.results=ordered.map(row=>({row, result:buildRefundVoucherLines(row, fangRefundState.invoices, usedInvoiceIdx, fangRefundState.cashflowRows, lizhangPool)}));
+  // 金流表有「退押金」出帳、但退款單裡找不到對應的——錢已經出去了就一定要有傳票，
+  // 依金流表金額先產生待查核的保底傳票，不能只提醒而不產生。
+  (unmatchedCfRows||[]).forEach(cf=>{
+    const idx=fangRefundState.cashflowRows.indexOf(cf);
+    const dateStr=cf.rocDateStr||TODAY_ROC;
+    const synthRow={dept:"（退款單沒有這筆）", note:cf.desc, total:cf.expense, tenant:"", rocDateStr:dateStr,
+      rocYear:parseInt(dateStr.split("/")[0])||115, cfIndex:idx, synthetic:true};
+    const res=buildRefundFallbackVoucher(synthRow, fangRefundState.cashflowRows, "金流表有這筆「退押金」出帳，但上傳的退款單裡找不到對應項目(退款單可能漏傳)");
+    fangRefundState.results.push({row:synthRow, result:res});
+  });
   // 上傳的電子發票裡，沒有被任何退款項目用到的——可能開錯發票、或退款單漏傳，提醒人工看一下
   fangRefundState.unusedInvoices=(fangRefundState.invoices||[]).filter((inv,i)=>!usedInvoiceIdx.has(i));
   renderRefundResult();
@@ -3930,6 +4140,19 @@ bindDropzone("fang-refund-dz-cashflow","fang-refund-file-cashflow",async(file,dz
     fangRefundState.cashflowRows=parseExpenseCashflowXlsx(data);
     dz.classList.add("loaded");
     dz.querySelector(".dz-label").textContent="✓ "+file.name+`（${fangRefundState.cashflowRows.length}筆）`;
+    fangRefundRebuild();
+  }catch(e){
+    showErr("fang-refund-err", e.message);
+  }
+});
+
+bindDropzone("fang-refund-dz-lizhang","fang-refund-file-lizhang",async(file,dz)=>{
+  clearErr("fang-refund-err");
+  try{
+    const data=await readFile(file);
+    fangRefundState.lizhangRows=parseLizhangDetailXlsx(data);
+    dz.classList.add("loaded");
+    dz.querySelector(".dz-label").textContent="✓ "+file.name+`（未沖押金${fangRefundState.lizhangRows.length}筆）`;
     fangRefundRebuild();
   }catch(e){
     showErr("fang-refund-err", e.message);
@@ -3976,7 +4199,7 @@ function renderRefundResult(){
   }
   if((fangRefundState.unmatchedCfRows||[]).length>0){
     const list=fangRefundState.unmatchedCfRows.map(cf=>`${cf.rocDateStr||"—"} ${cf.desc}（${fmtMoney(cf.expense)}）`).join("<br>　");
-    consistencyItems.push(`🔸 <strong>金流表有 ${fangRefundState.unmatchedCfRows.length} 筆</strong>寫著「退押金」，但退款單裡完全找不到對應的那一筆，代表退款單可能漏傳了這幾筆：<br>　${list}`);
+    consistencyItems.push(`🔸 <strong>金流表有 ${fangRefundState.unmatchedCfRows.length} 筆</strong>寫著「退押金」，但退款單裡完全找不到對應的那一筆，代表退款單可能漏傳了這幾筆（這幾筆已依金流表金額先產生「⚠需查核」的保底傳票，下載時會一起匯出）：<br>　${list}`);
   }
   if((fangRefundState.unusedInvoices||[]).length>0){
     const list=fangRefundState.unusedInvoices.map(inv=>`${inv.invoiceNo}（${inv.buyerName||"無名稱"}／${fmtMoney(inv.total)}）`).join("、");
@@ -6057,6 +6280,8 @@ function parseBizInvoiceXlsx(data){
   const colTax=col("稅額")>=0?col("稅額"):col("營業稅");
   const colTotal=col("服務費金額(含稅)")>=0?col("服務費金額(含稅)"):col("總金額");
   const colNote=col("發票備註");
+  // 買受人統一編號：RAGIC電子發票的欄位叫「公司統編」，舊格式可能叫「買受人統一編號」或「統一編號」
+  const colTaxId=["公司統編","買受人統一編號","統一編號"].map(n=>col(n)).find(i=>i>=0)??-1;
 
   return aoa.slice(hi+1).filter(r=>r[col("發票號碼")]!=null).map(r=>{
     let rocDateStr="";
@@ -6076,6 +6301,8 @@ function parseBizInvoiceXlsx(data){
       total:Number(r[colTotal])||0,
       rocDateStr, rocYear,
       rawNote:colNote>=0?String(r[colNote]||"").trim():"",
+      // 只認8碼數字的統一編號，其他(空白、亂填)一律當作沒有統編
+      taxId:(()=>{ if(colTaxId<0) return ""; const d=String(r[colTaxId]??"").replace(/\D/g,""); return d.length===8?d:""; })(),
     };
   });
 }

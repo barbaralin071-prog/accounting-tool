@@ -1222,7 +1222,8 @@ button.btn.ghost:hover{background:var(--accent-soft);}
       下面每一列對應到剛才下載的「一個傳票檔案」，請照你實際匯入文中的順序，把每個檔案各自拿到的真正傳票號碼填進去。<br>
       ① <b>立帳檔</b>：抓傳票裡科目 <b>2205-01</b>（代收款-雜項，代收電費）的貸方列，流程、格式、序號記錄都跟房管一樣（序號跟房管、業務處、社宅共用，同一天不會撞號）。<br>
       ② <b>沖帳檔</b>：抓傳票裡科目 <b>2205-031</b>（代收款-押金-短租）的借方列，沖掉當初收押金立的那一筆帳。<b>立帳單號從「立帳明細表」抓</b>（所以要先在上面上傳立帳明細表 2205-031 再產生傳票）；沖帳單號永遠空白；
-      沒有立帳單號的列不會放進沖帳檔，會另外列出來提醒。
+      沒有立帳單號的列不會放進沖帳檔，會另外列出來提醒。<br>
+      <b>金額一致性</b>：每一列押金的「立帳明細表金額、傳票檔案金額、沖帳檔金額」三者必須相同；有不同的列照樣放進沖帳檔（金額跟傳票一致），但會在結果上方的「押金金額一致性」框和跳出視窗警示，說明是哪個金額不一樣。
     </div>
     <div id="fang-refund-lizhang-inputs"></div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;flex-wrap:wrap;gap:8px;">
@@ -3797,44 +3798,88 @@ function pickDepositLizhang(rows, usedSet, custCode, tenantCands, target, noteTe
   return{status:unique?"ok":"ambiguous", picked:hits[0], cands};
 }
 
-// ══════ 沖帳金額檢查 ══════
-// 規則：沖帳檔裡每一列的「沖帳金額」，一定要等於立帳明細表裡「對應立帳單號那一列」的金額(未沖餘額)，
-// 不一樣就不能沖(沖的金額不對、或立帳單號已經不在明細表裡，匯進文中會沖錯帳)，要警示、不放進沖帳檔。
-function checkChongAmount(lizhangNo, amount){
+// ══════ 押金金額一致性檢查（立帳明細表 ＝ 傳票檔案 ＝ 沖帳檔）══════
+// 規則：2205-031 押金，下面「三個金額」一定要相同：
+//   ① 立帳明細表裡，對應立帳單號那一列的金額(未沖餘額)
+//   ② 產生出來的傳票檔案裡，這一列2205-031借方的金額
+//   ③ 沖帳檔裡，這一列的沖帳金額
+// 只檢查這三個金額，不管退款單備註寫的押金是多少(備註的押金有匯差等調整項，那是另一回事)。
+// 三者有任何不同，不會擋下來(照樣放進沖帳檔，金額跟傳票一致)，但要在網頁上警示、說清楚是哪一個金額不一樣。
+function lookupLizhangAmount(lizhangNo){
   const pool=fangRefundState.lizhangRows;
-  if(!pool||!pool.length) return{ok:false, reason:`目前沒有載入立帳明細表，沒辦法核對立帳單號 ${lizhangNo} 的金額`};
-  const hit=pool.find(r=>r.lizhangNo===String(lizhangNo));
-  if(!hit) return{ok:false, reason:`立帳明細表裡找不到立帳單號 ${lizhangNo}（可能已經沖完、結清，或是換了不同版本的明細表）`};
-  if(Math.abs(hit.amount-amount)>=0.5){
-    const partial=(hit.origAmount!=null&&Math.abs(hit.origAmount-hit.amount)>=0.5)?`（原立帳金額 ${fmtMoney(hit.origAmount)}，已經沖過一部分）`:"";
-    return{ok:false, reason:`沖帳金額 ${fmtMoney(amount)}，但立帳明細表裡立帳單號 ${lizhangNo} 的金額是 ${fmtMoney(hit.amount)}${partial}`};
-  }
-  return{ok:true};
+  if(!pool||!pool.length) return null; // 沒載入立帳明細表
+  return pool.find(r=>r.lizhangNo===String(lizhangNo))||{missing:true};
 }
 
-// 掃描目前所有短租退款結果：2205-031借方、帶立帳單號的分錄，金額跟立帳明細表對不對得上
-function fangRefundFindChongMismatches(){
-  const out=[];
+// 建立一筆三方比對：summary=長摘要(說明是哪一筆)、A=立帳明細表金額、B=傳票金額、C=沖帳檔金額
+function buildChongItem(summary, lizhangNo, B, C){
+  const hit=lookupLizhangAmount(lizhangNo);
+  const A=(hit&&!hit.missing)?hit.amount:null;
+  const ab=A!=null&&Math.abs(A-B)<0.5, bc=Math.abs(B-C)<0.5;
+  const ok=ab&&bc;
+  let reason="";
+  if(hit===null) reason="目前沒有載入立帳明細表，沒辦法核對立帳明細表的金額";
+  else if(hit.missing) reason="立帳明細表裡找不到這個立帳單號（可能已經沖完、結清，或換了不同版本的明細表）";
+  else if(!ok){
+    const parts=[];
+    if(!ab) parts.push("立帳明細表 跟 傳票 金額不同"+((hit.origAmount!=null&&Math.abs(hit.origAmount-hit.amount)>=0.5)?`（這筆原立帳金額 ${fmtMoney(hit.origAmount)}，已經沖過一部分，未沖餘額是 ${fmtMoney(hit.amount)}）`:""));
+    if(!bc) parts.push("傳票 跟 沖帳檔 金額不同");
+    reason=parts.join("；");
+  }
+  return{summary:String(summary||"").replace(/\s+/g," "), lizhangNo, A, B, C, ok, reason};
+}
+
+// 掃描目前所有短租退款傳票：每一列「2205-031借方、帶立帳單號」的分錄都做三方比對
+// (這個階段還沒產生沖帳檔，沖帳檔會直接沿用傳票的金額，所以③先等於②，按下「產生沖帳檔」時再用檔案實際寫入的金額重新核對一次)
+function fangRefundCollectChongItems(){
+  const items=[];
   (fangRefundState.results||[]).forEach(({row,result})=>{
     (result.lines||[]).forEach(l=>{
       if(l.acctCode!=="2205-031"||l.dc!==1||!l.lizhangNo) return;
-      const chk=checkChongAmount(l.lizhangNo,l.amount);
-      if(!chk.ok) out.push({where:String(row.note||"").replace(/\s+/g," ").slice(0,34), lizhangNo:l.lizhangNo, reason:chk.reason, result});
+      const it=buildChongItem(l.summary, l.lizhangNo, l.amount, l.amount);
+      it.result=result;
+      items.push(it);
     });
   });
-  return out;
+  return items;
 }
 
-// 在網頁上顯示警示框（list為空就收起來）。list每一項：{where, reason}
-function fangRefundRenderChongWarn(list, excludedNote){
+// 在網頁上顯示一致性檢查：先說明規則，再顯示結果；三者都相同顯示綠色，有不同就列表(把不同的那個金額標紅)
+function fangRefundRenderChongPanel(items, stage){
   const box=document.getElementById("fang-refund-chong-warn");
-  if(!list||!list.length){ box.style.display="none"; box.innerHTML=""; return; }
-  box.style.display="block";
+  if(!items||!items.length){ box.style.display="none"; box.innerHTML=""; return; }
   const esc=x=>String(x).replace(/&/g,"&amp;").replace(/</g,"&lt;");
-  box.innerHTML=`<div style="font-size:13.5px;font-weight:700;color:#c0392b;margin-bottom:6px;">⚠ 沖帳金額跟立帳明細表對不起來（${list.length}筆）</div>`
-    +`<div style="margin-bottom:6px;">沖帳金額一定要等於立帳明細表裡「對應立帳單號那一列」的金額。${excludedNote||"下面這幾筆請先確認再處理："}</div>`
-    +list.slice(0,15).map(b=>`<div>・${esc(b.where)}：${esc(b.reason)}</div>`).join("")
-    +(list.length>15?`<div>…還有${list.length-15}筆</div>`:"");
+  const bad=items.filter(i=>!i.ok);
+  const stageNote=stage==="generated"
+    ?"（已用剛產生的沖帳檔實際寫入的金額核對）"
+    :"（目前還沒產生沖帳檔，沖帳檔會沿用傳票的金額；按「產生沖帳檔」時會再用檔案實際寫入的金額核對一次）";
+  const rule=`<div style="margin-bottom:6px;"><b>押金金額一致性</b>：每一列 2205-031 押金，<b>① 立帳明細表（對應立帳單號）的金額、② 傳票檔案的金額、③ 沖帳檔的沖帳金額</b>，這三個一定要相同。${stageNote}</div>`;
+  box.style.display="block";
+  if(!bad.length){
+    box.style.cssText="margin-bottom:14px;padding:12px 14px;background:#eef8ef;border:1px solid #9fd0a4;border-radius:8px;font-size:12.5px;color:#1e5b26;line-height:1.7;";
+    box.innerHTML=rule+`<div style="font-weight:700;">✓ 共 ${items.length} 筆押金，立帳明細表、傳票檔案、沖帳檔三者的金額全部相同</div>`;
+    return;
+  }
+  box.style.cssText="margin-bottom:14px;padding:12px 14px;background:#fdecea;border:2px solid #d9534f;border-radius:8px;font-size:12.5px;color:#7a1f14;line-height:1.7;";
+  const redIf=(cond,txt)=>cond?`<span style="color:#c0392b;font-weight:700;">${txt}</span>`:txt;
+  const money=v=>v==null?"<span style=\"color:#c0392b;font-weight:700;\">找不到</span>":fmtMoney(v);
+  const trs=bad.slice(0,20).map(i=>{
+    const abBad=i.A==null||Math.abs(i.A-i.B)>=0.5, bcBad=Math.abs(i.B-i.C)>=0.5;
+    return `<tr>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;">${esc(i.summary.slice(0,34))}</td>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;">${esc(i.lizhangNo)}</td>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;text-align:right;">${i.A==null?money(null):redIf(abBad,fmtMoney(i.A))}</td>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;text-align:right;">${redIf(abBad||bcBad,fmtMoney(i.B))}</td>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;text-align:right;">${redIf(bcBad,fmtMoney(i.C))}</td>
+      <td style="padding:3px 8px;border-top:1px solid #e8b4ae;">${esc(i.reason)}</td></tr>`;
+  }).join("");
+  box.innerHTML=rule
+    +`<div style="font-weight:700;color:#c0392b;margin-bottom:6px;">⚠ 共 ${items.length} 筆押金，其中 ${bad.length} 筆三個金額不完全相同（不一致的列照樣放進沖帳檔，金額跟傳票一致，請在匯入文中前先確認）</div>`
+    +`<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:12px;min-width:640px;"><thead><tr style="text-align:left;">
+        <th style="padding:3px 8px;">押金（長摘要）</th><th style="padding:3px 8px;">立帳單號</th>
+        <th style="padding:3px 8px;text-align:right;">① 立帳明細表</th><th style="padding:3px 8px;text-align:right;">② 傳票檔案</th><th style="padding:3px 8px;text-align:right;">③ 沖帳檔</th>
+        <th style="padding:3px 8px;">說明</th></tr></thead><tbody>${trs}</tbody></table></div>`
+    +(bad.length>20?`<div>…還有 ${bad.length-20} 筆</div>`:"");
 }
 
 // 金流表有出帳就一定要有傳票：核心邏輯解析不出來(ok:false)或程式出錯時，不能把這筆丟掉，
@@ -4327,13 +4372,13 @@ function fangRefundRebuild(){
   });
   // 上傳的電子發票裡，沒有被任何退款項目用到的——可能開錯發票、或退款單漏傳，提醒人工看一下
   fangRefundState.unusedInvoices=(fangRefundState.invoices||[]).filter((inv,i)=>!usedInvoiceIdx.has(i));
-  // 沖帳金額跟立帳明細表不一致的，在網頁上馬上提醒，並標在該筆的需查核說明裡
-  const chongBad=fangRefundFindChongMismatches();
-  chongBad.forEach(b=>{
+  // 押金金額的三方一致性(立帳明細表／傳票檔案／沖帳檔)：在網頁上馬上說明、提醒，並標在該筆的需查核說明裡
+  const chongItems=fangRefundCollectChongItems();
+  chongItems.filter(i=>!i.ok).forEach(b=>{
     b.result.needsReview=true;
-    b.result.reviewReason=(b.result.reviewReason?b.result.reviewReason+"；":"")+"⚠沖帳金額不一致："+b.reason;
+    b.result.reviewReason=(b.result.reviewReason?b.result.reviewReason+"；":"")+"⚠押金金額三方不一致（立帳明細表／傳票／沖帳檔）："+b.reason;
   });
-  fangRefundRenderChongWarn(chongBad,"這幾筆的押金分錄先不要拿去沖帳，請先確認：");
+  fangRefundRenderChongPanel(chongItems,"preview");
   renderRefundResult();
 }
 
@@ -4607,7 +4652,7 @@ document.getElementById("fang-refund-btn-chongzhang").addEventListener("click",(
   if(!vnumByFile) return;
   let anyOutput=false;
   const skipped=[];
-  const mismatched=[];
+  const chongItems=[]; // 每一列沖帳的三方金額比對(立帳明細表／傳票／沖帳檔實際寫入的金額)
   Object.keys(vnumByFile).sort().forEach(fileKey=>{
     const voucherRows=fangRefundVoucherBatches.get(fileKey);
     if(!voucherRows) return;
@@ -4615,12 +4660,12 @@ document.getElementById("fang-refund-btn-chongzhang").addEventListener("click",(
     voucherRows.forEach((r,idx)=>{
       if(r[4]!=="2205-031"||r[6]!==1) return; // 押金：2205-031借方才是沖掉當初的立帳
       if(!r[10]){ skipped.push(`${fileKey} 第${idx+1}列：${r[8]}`); return; }
-      // 沖帳金額一定要等於立帳明細表對應立帳單號那一列的金額，不一樣的不放進沖帳檔
-      const chk=checkChongAmount(r[10], r[7]);
-      if(!chk.ok){ mismatched.push({where:`${fileKey} 第${idx+1}列（${String(r[8]).slice(0,24)}）`, reason:chk.reason}); return; }
       const seqNo=String(idx+1).padStart(4,"0");
       // 沖帳單號永遠空白；立帳單號是當初收押金時立的那一筆；其餘欄位跟傳票一致
-      outRows.push(["", r[10], r[4], r[3], r[5], vnumByFile[fileKey], seqNo, r[7], r[8], "", ""]);
+      const outRow=["", r[10], r[4], r[3], r[5], vnumByFile[fileKey], seqNo, r[7], r[8], "", ""];
+      outRows.push(outRow);
+      // 三方金額核對：立帳明細表金額 ↔ 傳票這一列的金額 ↔ 沖帳檔這一列實際寫入的金額
+      chongItems.push(buildChongItem(`${fileKey} 第${idx+1}列：${r[8]}`, r[10], Number(r[7]), Number(outRow[7])));
     });
     if(!outRows.length) return;
     anyOutput=true;
@@ -4628,20 +4673,17 @@ document.getElementById("fang-refund-btn-chongzhang").addEventListener("click",(
     XLSX.utils.book_append_sheet(wb,buildChongzhang11Sheet(outRows),"沖帳檔");
     XLSX.writeFile(wb, `沖帳檔_短租退款_${fileKey}.xlsx`);
   });
-  if(mismatched.length){
-    fangRefundRenderChongWarn(mismatched,"這幾列<b>沒有放進沖帳檔</b>，請先確認立帳明細表或傳票金額再重新產生：");
-    try{ alert(`⚠ 沖帳金額跟立帳明細表不一致，共 ${mismatched.length} 筆。\n這些列沒有放進沖帳檔，請看頁面上方的紅色警示。`); }catch(e){}
-  }else{
-    fangRefundRenderChongWarn([]); // 這次檢查都沒問題，把之前的警示收起來
+  fangRefundRenderChongPanel(chongItems,"generated");
+  const chongBad=chongItems.filter(i=>!i.ok);
+  if(chongBad.length){
+    try{ alert(`⚠ 押金金額三方不一致，共 ${chongBad.length} 筆。\n立帳明細表、傳票檔案、沖帳檔這三個金額必須相同。\n這幾列已放進沖帳檔（金額跟傳票一致），請看頁面上方的紅色說明，匯入文中前先確認。`); }catch(e){}
   }
   if(skipped.length){
     info.style.display="block";
     info.innerHTML=`<b>有 ${skipped.length} 列 2205-031 借方沒有立帳單號，沒有放進沖帳檔</b>（沒上傳立帳明細表、帳上找不到這筆押金，或是差額補平的列），請在文中人工選沖帳對象：<br>　`+skipped.slice(0,12).map(x=>x.replace(/</g,"&lt;")).join("<br>　")+(skipped.length>12?`<br>　…還有${skipped.length-12}列`:"");
   }
   if(!anyOutput){
-    showErr("fang-refund-lizhang-err", mismatched.length
-      ?"沒有產生沖帳檔：帶著立帳單號的列，沖帳金額全部都跟立帳明細表對不起來，請看上面的紅色警示。"
-      :"填的這些檔案裡，沒有任何一列 2205-031 借方帶著立帳單號，沒有東西可以產生沖帳檔。請先在上面上傳「立帳明細表 2205-031」再重新產生傳票。");
+    showErr("fang-refund-lizhang-err","填的這些檔案裡，沒有任何一列 2205-031 借方帶著立帳單號，沒有東西可以產生沖帳檔。請先在上面上傳「立帳明細表 2205-031」再重新產生傳票。");
   }
 });
 

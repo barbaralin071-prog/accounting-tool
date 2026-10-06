@@ -3887,7 +3887,7 @@ function fangRefundRenderChongPanel(items, stage){
 // 讓會計匯入後再人工補上電費、代收電費、押金立帳對象等正確分錄。
 function buildRefundFallbackVoucher(row, cashflowRowsRef, reason){
   const cf=(row.cfIndex!=null && cashflowRowsRef && cashflowRowsRef[row.cfIndex])?cashflowRowsRef[row.cfIndex]:null;
-  const bankAmount=cf?cf.expense:row.total;
+  const bankAmount=cf?(cf.expense+(cf.fee||0)):row.total; // 金流表有匯費欄位的話，銀行實際出款＝支出＋匯費
   const bankDesc=cf?cf.desc:(row.note||"");
   const hm=matchHousingFromDesc(extractRefundHouseText(row.note||""))||matchHousingFromDesc(row.note||"")||(cf?matchHousingFromDesc(cf.desc):null);
   const code=hm?hm.code:"";
@@ -4072,7 +4072,7 @@ function buildRefundVoucherLinesCore(row, invoices, usedInvoiceIdx, cashflowRows
   // 例外：有些備註沒寫匯費、但退款單總金額其實已經扣掉15元匯費(押金推算會剛好多15)，這種情況用押金推算的金額才對。
   const derivedBank=depositTotal-parsed.electricFee;
   const actualBank=Math.round(row.total+(parsed.fee||0));
-  bankAmount=cf?cf.expense:((Math.abs(derivedBank-actualBank)<0.5||(!parsed.fee&&Math.abs(derivedBank-(row.total+15))<0.5))?derivedBank:actualBank);
+  bankAmount=cf?(cf.expense+bankFee):((Math.abs(derivedBank-actualBank)<0.5||(!parsed.fee&&Math.abs(derivedBank-(row.total+15))<0.5))?derivedBank:actualBank);
 
   // 每一段電費/代收電費，各自獨立查詢這段文字裡提到的房源，依「那個房源自己的服務模式」決定要記到
   // 4101-04+2290(包租，要記銷項稅額)還是2205-01(合作拆帳，代收代付不用記稅)——
@@ -4192,10 +4192,9 @@ function buildRefundVoucherLinesCore(row, invoices, usedInvoiceIdx, cashflowRows
   });
 
   lines.push({acctCode:"1110-01", custCode:code, dc:2, amount:bankAmount, summary:bankDesc, liChongOverride:"N"});
-  // 這筆對應到的金流表那一列，如果「匯費」欄位本身有填值，才另開一行6270（金額直接用金流表上的匯費欄位）；
-  // 沒對到金流表、或金流表匯費欄位是空的，就不開這一行。方向是貸方（短租的匯費是從要退給房客的錢裡面扣掉，
-  // 不是公司額外多付，這點跟房管年租的退押金方向相反）。
-  if(bankFee>0) lines.push({acctCode:"6270", custCode:code, dc:2, amount:bankFee, summary:bankDesc, liChongOverride:"N"});
+  // 短租退押不開6270：匯費15元大部分是房客自己負擔，已經扣在退款單的退款金額裡(退款單總金額是扣完匯費的實際匯款金額)，
+  // 銀行實際付出去的是「退款金額＋匯費」。金流表上如果「匯費」欄位有註記(例如支出45,393、匯費15)，
+  // 這筆匯費直接併進1110-01(45,393＋15＝45,408)，不另外開一行匯款手續費。(房管年租的退押金是另一套規則，不受影響)
 
   // 借貸平衡檢查：備註文字千奇百怪，難免會有清單裡沒收錄的關鍵字。
   // 不平衡的話還是要把分錄產生出來放進傳票，只是用一筆「差額待核對」的分錄補平（確保匯入文中時借貸還是平的），
